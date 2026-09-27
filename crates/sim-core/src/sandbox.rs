@@ -147,7 +147,7 @@ impl Sandbox {
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Animal spawned".into()});
     }
     pub fn grow_vegetation_at(&mut self, position:Position, count:u32) {
-        for i in 0..count {
+        for _ in 0..count {
             let id=self.next_id;self.next_id+=1;
             let a=unit(self.seed,id*3)*std::f32::consts::TAU;let r=unit(self.seed,id*3+1)*32.0;
             self.features.push(SandboxFeature{id,kind:FeatureKind::Vegetation,position:Position{x:position.x+a.cos()*r,y:position.y+a.sin()*r},
@@ -155,7 +155,7 @@ impl Sandbox {
         }
     }
     pub fn deposit_minerals_at(&mut self, position:Position, count:u32) {
-        for i in 0..count {
+        for _ in 0..count {
             let id=self.next_id;self.next_id+=1;
             let a=unit(self.seed,id*5)*std::f32::consts::TAU;let r=unit(self.seed,id*5+1)*24.0;
             self.features.push(SandboxFeature{id,kind:FeatureKind::LooseMaterial,position:Position{x:position.x+a.cos()*r,y:position.y+a.sin()*r},

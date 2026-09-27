@@ -49,13 +49,13 @@ impl PixelSkin {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnchorKind { Head, Eye, Foot, Tail, Attack }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct PixelAnchor { pub kind:AnchorKind, pub x:u8, pub y:u8 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MonsterBlueprint {
     pub id:u64,
     pub name:String,

@@ -22,5 +22,5 @@ pub fn inherit(a:HeritableTraits,b:HeritableTraits,variation:[f32;6])->Heritable
     }
 }
 
-/// These biological traits describe continuous physical variation.
-/// Culture, intelligence, morality, aggression and technology are intentionally not racial stats.
+// These biological traits describe continuous physical variation.
+// Culture, intelligence, morality, aggression and technology are intentionally not racial stats.
