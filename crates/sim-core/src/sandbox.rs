@@ -6,6 +6,7 @@ use crate::{
     events::{WorldEvent, WorldEventKind},
     species::{AnimalArchetype, MonsterArchetype},
     blueprints::PixelSkin,
+    pixel_animation::MotionState,
     causal_log::{CausalLog, CausalNode},
     world::Position,
 };
@@ -25,6 +26,7 @@ pub struct SandboxAnimal { pub id:u64, pub position:Position, pub hunger:f32, pu
 #[derive(Clone, Debug)]
 pub struct SandboxMonster {
     pub id:u64, pub position:Position, pub hunger:f32, pub health:f32, pub archetype:MonsterArchetype, pub skin:Option<PixelSkin>,
+    pub motion:MotionState, pub motion_phase:f32,
 }
 
 #[derive(Clone, Debug)]
@@ -150,7 +152,7 @@ impl Sandbox {
     }
     pub fn spawn_monster_with(&mut self, position:Position, archetype:MonsterArchetype, skin:Option<PixelSkin>) {
         let id=self.next_id; self.next_id+=1;
-        self.monsters.push(SandboxMonster{id,position,hunger:0.7,health:1.0,archetype,skin});
+        self.monsters.push(SandboxMonster{id,position,hunger:0.7,health:1.0,archetype,skin,motion:MotionState::Idle,motion_phase:0.0});
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Monster spawned".into()});
     }
 
@@ -253,16 +255,20 @@ impl Sandbox {
             a.position.x+=signed(self.seed,self.year.to_bits()+a.id)*days*0.25;a.position.y+=signed(self.seed,self.year.to_bits()+a.id+3)*days*0.25;
         }
         for m in &mut self.monsters {
-            if m.health<=0.0 {continue;}
+            m.motion_phase=(m.motion_phase+days*(0.18+m.archetype.speed*0.22)).fract();
+            if m.health<=0.0 {m.motion=MotionState::Death;continue;}
+            m.motion=MotionState::Idle;
             m.hunger=(m.hunger+days*0.004).clamp(0.0,1.0);
             if let Some((idx,d))=self.residents.iter().enumerate().filter(|(_,r)|r.health>0.0)
                 .map(|(i,r)|(i,dist(m.position,r.position))).min_by(|a,b|a.1.total_cmp(&b.1)) {
                 let target=self.residents[idx].position;
                 if d<8.0 && m.hunger*0.55+m.archetype.aggression*0.45>0.45 {
+                    m.motion=MotionState::Attack;
                     let damage=(0.008+0.020*m.archetype.aggression+0.000012*m.archetype.body_mass_kg)*days;
                     self.residents[idx].health=(self.residents[idx].health-damage).max(0.0);
                     m.hunger=(m.hunger-damage*1.5).max(0.0);
                 } else if d<180.0 && m.hunger>0.35 {
+                    m.motion=if m.archetype.speed>0.9{MotionState::Run}else{MotionState::Walk};
                     move_toward(&mut m.position,target,days*(0.45+m.archetype.speed+m.archetype.aggression*0.35));
                 } else {
                     m.position.x+=signed(self.seed,self.year.to_bits()+m.id)*days*0.4;
