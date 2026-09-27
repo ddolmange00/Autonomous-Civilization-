@@ -4,6 +4,7 @@ use crate::{
     memory::{Episode, EpisodicMemory},
     awareness::{Awareness, SituationKind, SituationReport},
     events::{WorldEvent, WorldEventKind},
+    species::{AnimalArchetype, MonsterArchetype},
     causal_log::{CausalLog, CausalNode},
     world::Position,
 };
@@ -18,11 +19,11 @@ pub struct Resident {
 }
 
 #[derive(Clone, Debug)]
-pub struct SandboxAnimal { pub id:u64, pub position:Position, pub hunger:f32, pub fear:f32, pub health:f32 }
+pub struct SandboxAnimal { pub id:u64, pub position:Position, pub hunger:f32, pub health:f32, pub archetype:AnimalArchetype }
 
 #[derive(Clone, Debug)]
 pub struct SandboxMonster {
-    pub id:u64, pub position:Position, pub hunger:f32, pub aggression:f32, pub health:f32,
+    pub id:u64, pub position:Position, pub hunger:f32, pub health:f32, pub archetype:MonsterArchetype,
 }
 
 #[derive(Clone, Debug)]
@@ -108,9 +109,10 @@ impl Sandbox {
             current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default()});
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Resident spawned".into()});
     }
-    pub fn spawn_animal_at(&mut self, position:Position) {
+    pub fn spawn_animal_at(&mut self, position:Position) { self.spawn_animal_with(position,AnimalArchetype::default()); }
+    pub fn spawn_animal_with(&mut self, position:Position, archetype:AnimalArchetype) {
         let id=self.next_id;self.next_id+=1;
-        self.animals.push(SandboxAnimal{id,position,hunger:0.35,fear:0.55+unit(self.seed,id)*0.35,health:1.0});
+        self.animals.push(SandboxAnimal{id,position,hunger:0.35,health:1.0,archetype});
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Animal spawned".into()});
     }
     pub fn grow_vegetation_at(&mut self, position:Position, count:u32) {
@@ -143,9 +145,11 @@ impl Sandbox {
         self.spawn_monster_at(Position{x:130.0+signed(self.seed,3000+n)*80.0,y:signed(self.seed,3200+n)*140.0});
     }
     pub fn spawn_monster_at(&mut self, position:Position) {
-        let n=self.monsters.len() as u64;
+        let n=self.monsters.len() as u64; let mut archetype=MonsterArchetype::default(); archetype.aggression=0.55+unit(self.seed,3400+n)*0.4; self.spawn_monster_with(position,archetype);
+    }
+    pub fn spawn_monster_with(&mut self, position:Position, archetype:MonsterArchetype) {
         let id=self.next_id; self.next_id+=1;
-        self.monsters.push(SandboxMonster{id,position,hunger:0.7,aggression:0.55+unit(self.seed,3400+n)*0.4,health:1.0});
+        self.monsters.push(SandboxMonster{id,position,hunger:0.7,health:1.0,archetype});
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Monster spawned".into()});
     }
 
@@ -192,9 +196,9 @@ impl Sandbox {
                 let d=dist(r.position,m.position);
                 if m.health>0.0 && d<=110.0 {
                     let confidence=(1.0-d/140.0).clamp(0.1,1.0);
-                    r.awareness.observe(SituationReport{kind:SituationKind::CreatureThreat,source_id:Some(m.id),perceived_severity:(m.aggression*m.health).clamp(0.0,1.5),confidence,observed_year:self.year,location:[m.position.x,m.position.y]});
+                    r.awareness.observe(SituationReport{kind:SituationKind::CreatureThreat,source_id:Some(m.id),perceived_severity:(m.archetype.aggression*m.health*(0.5+m.archetype.body_mass_kg.sqrt()/60.0)).clamp(0.0,1.5),confidence,observed_year:self.year,location:[m.position.x,m.position.y]});
                     perceived.push(PerceivedFeature{id:m.id,kind:FeatureKind::Creature,distance_m:d,
-                        danger:(m.aggression*m.health).clamp(0.0,1.5),food_hint:0.0,material_hint:0.25,uncertainty:(d/140.0).clamp(0.05,0.75)});
+                        danger:(m.archetype.aggression*m.health*(0.5+m.archetype.body_mass_kg.sqrt()/60.0)).clamp(0.0,1.5),food_hint:0.0,material_hint:0.25,uncertainty:(d/140.0).clamp(0.05,0.75)});
                 }
             }
             let affordances=generate(&perceived,LocalCapabilities{reach_m:12.0,cutting:0.05,digging:0.04,carrying:0.2,heat_tolerance:0.0});
@@ -244,7 +248,7 @@ impl Sandbox {
         for a in &mut self.animals {
             if a.health<=0.0 {continue;} a.hunger=(a.hunger+days*0.002).clamp(0.0,1.0);
             let nearest_monster=self.monsters.iter().filter(|m|m.health>0.0).map(|m|(m.position,dist(a.position,m.position))).min_by(|x,y|x.1.total_cmp(&y.1));
-            if let Some((p,d))=nearest_monster {if d<70.0 {move_away(&mut a.position,p,days*(0.5+a.fear));continue;}}
+            if let Some((p,d))=nearest_monster {if d<70.0 {move_away(&mut a.position,p,days*(0.35+a.archetype.speed+a.archetype.fear*0.45));continue;}}
             a.position.x+=signed(self.seed,self.year.to_bits()+a.id)*days*0.25;a.position.y+=signed(self.seed,self.year.to_bits()+a.id+3)*days*0.25;
         }
         for m in &mut self.monsters {
@@ -253,12 +257,12 @@ impl Sandbox {
             if let Some((idx,d))=self.residents.iter().enumerate().filter(|(_,r)|r.health>0.0)
                 .map(|(i,r)|(i,dist(m.position,r.position))).min_by(|a,b|a.1.total_cmp(&b.1)) {
                 let target=self.residents[idx].position;
-                if d<8.0 && m.hunger*0.55+m.aggression*0.45>0.45 {
-                    let damage=(0.015+0.035*m.aggression)*days;
+                if d<8.0 && m.hunger*0.55+m.archetype.aggression*0.45>0.45 {
+                    let damage=(0.008+0.020*m.archetype.aggression+0.000012*m.archetype.body_mass_kg)*days;
                     self.residents[idx].health=(self.residents[idx].health-damage).max(0.0);
                     m.hunger=(m.hunger-damage*1.5).max(0.0);
                 } else if d<180.0 && m.hunger>0.35 {
-                    move_toward(&mut m.position,target,days*(0.7+m.aggression));
+                    move_toward(&mut m.position,target,days*(0.45+m.archetype.speed+m.archetype.aggression*0.35));
                 } else {
                     m.position.x+=signed(self.seed,self.year.to_bits()+m.id)*days*0.4;
                     m.position.y+=signed(self.seed,self.year.to_bits()+m.id+1)*days*0.4;
