@@ -1,3 +1,5 @@
+pub mod resource_kinds;
+pub mod species;
 pub mod causal_log;
 pub mod family;
 pub mod relationships;
