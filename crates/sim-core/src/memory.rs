@@ -32,7 +32,7 @@ impl EpisodicMemory {
         for e in self.episodes.iter().filter(|e|e.action==action) {
             let age=(current_year-e.year).max(0.) as f32;
             let recency=(-age/20.).exp();
-            let salience=1.+e.surprise*.7+e.danger*.5+e.social_visibility*.2;
+            let salience=1.+e.surprise*0.7+e.danger*0.5+e.social_visibility*0.2;
             let w=recency*salience;
             weighted+=e.value*w; total+=w;
         }
