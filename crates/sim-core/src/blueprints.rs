@@ -50,15 +50,27 @@ impl PixelSkin {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AnchorKind { Head, Eye, Foot, Tail, Attack }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct PixelAnchor { pub kind:AnchorKind, pub x:u8, pub y:u8 }
+
 pub struct MonsterBlueprint {
     pub id:u64,
     pub name:String,
     pub skin:PixelSkin,
     pub archetype:MonsterArchetype,
     pub scale:f32,
+    pub anchors:Vec<PixelAnchor>,
 }
 
 impl MonsterBlueprint {
+    pub fn set_anchor(&mut self,anchor:PixelAnchor) {
+        self.anchors.retain(|a|a.kind!=anchor.kind || a.kind==AnchorKind::Foot);
+        if anchor.x<self.skin.width&&anchor.y<self.skin.height {self.anchors.push(anchor);}
+    }
+    pub fn anchors_of(&self,kind:AnchorKind)->impl Iterator<Item=&PixelAnchor>{self.anchors.iter().filter(move |a|a.kind==kind)}
     pub fn effective_mass_kg(&self)->f32 {
         self.archetype.body_mass_kg*self.scale.max(0.1).powi(3)
     }
@@ -80,7 +92,7 @@ mod tests {
         let mut s=PixelSkin::new(4,4);s.flood_fill(0,0,PixelCell{filled:true,palette:3,emissive:false});assert!(s.pixels.iter().all(|p|p.filled&&p.palette==3));
     }
     #[test] fn scaling_body_changes_mass_cubically() {
-        let b=MonsterBlueprint{id:1,name:"x".into(),skin:PixelSkin::new(16,16),archetype:MonsterArchetype::default(),scale:2.0};
+        let b=MonsterBlueprint{id:1,name:"x".into(),skin:PixelSkin::new(16,16),archetype:MonsterArchetype::default(),scale:2.0,anchors:vec![]};
         assert!((b.effective_mass_kg()-b.archetype.body_mass_kg*8.0).abs()<0.01);
     }
 }
