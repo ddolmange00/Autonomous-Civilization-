@@ -38,7 +38,7 @@ mod tests {
     use super::*;
     #[test] fn bucket_conserves_rain_without_et() {
         let a=WaterBalance::default();
-        let b=step_bucket(a,WaterFlux{rainfall_mm:100.,infiltration_capacity_mm:40.,evapotranspiration_mm:0.,drainage_fraction:.25});
+        let b=step_bucket(a,WaterFlux{rainfall_mm:100.,infiltration_capacity_mm:40.,evapotranspiration_mm:0.,drainage_fraction:0.25});
         let total=b.surface_water_mm+b.soil_water_mm+b.groundwater_mm;
         assert!((total-100.).abs()<1e-9);
     }
