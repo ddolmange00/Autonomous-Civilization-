@@ -39,6 +39,6 @@ mod tests {
         assert!((b/a-4.0).abs()<1e-10);
     }
     #[test] fn rougher_channel_flows_slower() {
-        assert!(manning_velocity_m_s(1.,.01,.03)>manning_velocity_m_s(1.,.01,.06));
+        assert!(manning_velocity_m_s(1.,0.01,0.03)>manning_velocity_m_s(1.,0.01,0.06));
     }
 }
