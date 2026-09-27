@@ -7,16 +7,23 @@ use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::World
 #[derive(Component)] struct FeatureSprite(u64);
 #[derive(Component)] struct HudText;
 #[derive(Component)] struct InspectorText;
+#[derive(Component)] struct ToolText;
+#[derive(Component)] struct EventOverlay(u64);
 
 #[derive(Clone, Copy, Debug)]
 enum Selected { Resident(u64), Monster(u64), Settlement }
 
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum GodTool { Inspect, Monster, Fire, Flood, Earthquake }
+impl GodTool { fn label(self)->&'static str { match self {Self::Inspect=>"INSPECT",Self::Monster=>"MONSTER",Self::Fire=>"FIRE",Self::Flood=>"FLOOD",Self::Earthquake=>"QUAKE"} } }
+
 #[derive(Resource)]
 struct ViewerState {
     sim:Sandbox, seed:u64, speed:f32, paused:bool, debug:bool, selected:Option<Selected>,
+    tool:GodTool, tool_radius:f32, tool_intensity:f32,
 }
 impl Default for ViewerState {
-    fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None} }
+    fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None,tool:GodTool::Inspect,tool_radius:70.0,tool_intensity:0.8} }
 }
 
 fn main() {
@@ -28,7 +35,7 @@ fn main() {
             ..default()
         }))
         .add_systems(Startup,setup)
-        .add_systems(Update,(controls,tick_sim,sync_world,select_with_mouse,update_ui))
+        .add_systems(Update,(controls,tick_sim,sync_world,world_click,update_ui))
         .run();
 }
 
@@ -53,6 +60,8 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
         Node{position_type:PositionType::Absolute,top:px(10),left:px(12),..default()},HudText));
     commands.spawn((Text::new(""),TextFont::from_font_size(14.0),TextColor(Color::srgb(0.88,0.92,0.86)),
         Node{position_type:PositionType::Absolute,top:px(10),right:px(12),..default()},InspectorText));
+    commands.spawn((Text::new(""),TextFont::from_font_size(15.0),TextColor(Color::srgb(0.96,0.90,0.72)),
+        Node{position_type:PositionType::Absolute,bottom:px(14),left:percent(20),..default()},ToolText));
 }
 
 fn controls(
@@ -67,10 +76,15 @@ fn controls(
     if keys.just_pressed(KeyCode::Digit5){state.speed=1000.0;}
     if keys.just_pressed(KeyCode::Space){state.paused=!state.paused;}
     if keys.just_pressed(KeyCode::F3){state.debug=!state.debug;}
-    if keys.just_pressed(KeyCode::KeyM){state.sim.spawn_monster();}
-    if keys.just_pressed(KeyCode::KeyF){state.sim.inject_event(WorldEventKind::Fire,Position{x:-110.0,y:0.0},65.0,0.9,24.0);}
-    if keys.just_pressed(KeyCode::KeyG){state.sim.inject_event(WorldEventKind::Flood,Position{x:0.0,y:0.0},85.0,0.85,18.0);}
-    if keys.just_pressed(KeyCode::KeyQ){state.sim.inject_event(WorldEventKind::Earthquake,Position{x:-80.0,y:0.0},110.0,0.75,2.0);}
+    if keys.just_pressed(KeyCode::KeyI){state.tool=GodTool::Inspect;}
+    if keys.just_pressed(KeyCode::KeyM){state.tool=GodTool::Monster;}
+    if keys.just_pressed(KeyCode::KeyF){state.tool=GodTool::Fire;}
+    if keys.just_pressed(KeyCode::KeyG){state.tool=GodTool::Flood;}
+    if keys.just_pressed(KeyCode::KeyQ){state.tool=GodTool::Earthquake;}
+    if keys.just_pressed(KeyCode::BracketLeft){state.tool_radius=(state.tool_radius-10.0).max(10.0);}
+    if keys.just_pressed(KeyCode::BracketRight){state.tool_radius=(state.tool_radius+10.0).min(240.0);}
+    if keys.just_pressed(KeyCode::Comma){state.tool_intensity=(state.tool_intensity-0.1).max(0.1);}
+    if keys.just_pressed(KeyCode::Period){state.tool_intensity=(state.tool_intensity+0.1).min(2.0);}
     if keys.just_pressed(KeyCode::KeyV){state.selected=Some(Selected::Settlement);}
     if keys.just_pressed(KeyCode::KeyR){
         state.seed=state.seed.wrapping_add(1); state.sim=Sandbox::new(state.seed); state.selected=None;
@@ -127,37 +141,51 @@ fn sync_world(
     }
 }
 
-fn select_with_mouse(
+fn world_click(
     buttons:Res<ButtonInput<MouseButton>>,window:Query<&Window,With<PrimaryWindow>>,
     camera:Query<(&Camera,&GlobalTransform,&Transform),With<WorldCamera>>,mut state:ResMut<ViewerState>,
+    mut commands:Commands,
 ) {
     if !buttons.just_pressed(MouseButton::Left){return;}
     let Ok(w)=window.single() else{return;}; let Some(cursor)=w.cursor_position() else{return;};
     let Ok((cam,global,cam_t))=camera.single() else{return;};
     let Ok(world)=cam.viewport_to_world_2d(global,cursor) else{return;};
-    let threshold=18.0*cam_t.scale.x;
-    let mut best:(f32,Option<Selected>)=(threshold,None);
-    for r in &state.sim.residents {
-        let d=world.distance(Vec2::new(r.position.x,r.position.y));
-        if d<best.0 {best=(d,Some(Selected::Resident(r.id)));}
+    let p=Position{x:world.x,y:world.y};
+    match state.tool {
+        GodTool::Inspect=>{
+            let threshold=18.0*cam_t.scale.x; let mut best:(f32,Option<Selected>)=(threshold,None);
+            for r in &state.sim.residents {let d=world.distance(Vec2::new(r.position.x,r.position.y));if d<best.0{best=(d,Some(Selected::Resident(r.id)));}}
+            for m in &state.sim.monsters {let d=world.distance(Vec2::new(m.position.x,m.position.y));if d<best.0{best=(d,Some(Selected::Monster(m.id)));}}
+            state.selected=best.1;
+        }
+        GodTool::Monster=>{
+            state.sim.spawn_monster_at(p);
+        }
+        GodTool::Fire|GodTool::Flood|GodTool::Earthquake=>{
+            let (kind,duration,color)=match state.tool {
+                GodTool::Fire=>(WorldEventKind::Fire,24.0,Color::srgba(0.95,0.25,0.08,0.20)),
+                GodTool::Flood=>(WorldEventKind::Flood,18.0,Color::srgba(0.12,0.48,0.78,0.18)),
+                _=>(WorldEventKind::Earthquake,2.0,Color::srgba(0.75,0.62,0.35,0.16)),
+            };
+            let radius=state.tool_radius; let intensity=state.tool_intensity;
+            let id=state.sim.inject_event(kind,p,radius,intensity,duration);
+            commands.spawn((Sprite::from_color(color,Vec2::splat(radius*2.0)),Transform::from_xyz(p.x,p.y,0.5),EventOverlay(id)));
+        }
     }
-    for m in &state.sim.monsters {
-        let d=world.distance(Vec2::new(m.position.x,m.position.y));
-        if d<best.0 {best=(d,Some(Selected::Monster(m.id)));}
-    }
-    state.selected=best.1;
 }
 
 fn update_ui(
     state:Res<ViewerState>,mut hud:Query<&mut Text,(With<HudText>,Without<InspectorText>)>,
     mut inspector:Query<&mut Text,(With<InspectorText>,Without<HudText>)>,
+    mut tool:Query<&mut Text,(With<ToolText>,Without<HudText>,Without<InspectorText>)>,
 ) {
     if let Ok(mut t)=hud.single_mut() {
         let alive=state.sim.residents.iter().filter(|r|r.health>0.0).count();
-        t.0=format!("SEED {}   YEAR {:.2}   RESIDENTS {}/{}   MONSTERS {}\nSPEED x{} {}   [1-5 speed] [Space pause] [M monster] [F fire] [G flood] [Q quake] [R seed] [F3 debug]\n[WASD pan] [+/- zoom] [Click entity] [V settlement pulse]",
+        t.0=format!("SEED {}   YEAR {:.2}   RESIDENTS {}/{}   MONSTERS {}\nSPEED x{} {}   [1-5] speed [Space] pause [R] seed [F3] debug\n[WASD] pan [+/-] zoom [V] settlement pulse",
             state.seed,state.sim.year,alive,state.sim.residents.len(),state.sim.monsters.iter().filter(|m|m.health>0.0).count(),
             state.speed as u32,if state.paused{"PAUSED"}else{""});
     }
+    if let Ok(mut t)=tool.single_mut(){t.0=format!("GOD DOCK   [I] Inspect   [M] Monster   [F] Fire   [G] Flood   [Q] Quake     ACTIVE: {}   radius {:.0}   intensity {:.1}   [[ / ]] radius   [, / .] power",state.tool.label(),state.tool_radius,state.tool_intensity);}
     if let Ok(mut t)=inspector.single_mut() {
         t.0=match state.selected {
             None=>"CLICK AN ENTITY\n\nF3 toggles internal cognition".into(),
