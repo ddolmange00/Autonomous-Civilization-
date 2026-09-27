@@ -1,3 +1,6 @@
+pub mod observability;
+pub mod demography;
+pub mod awareness;
 pub mod sandbox;
 pub mod land;
 pub mod perception;
