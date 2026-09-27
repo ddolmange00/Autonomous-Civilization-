@@ -1,0 +1,175 @@
+use bevy::{prelude::*, window::PrimaryWindow};
+use sim_core::{affordances::FeatureKind, sandbox::Sandbox};
+
+#[derive(Component)] struct WorldCamera;
+#[derive(Component)] struct ResidentSprite(u64);
+#[derive(Component)] struct MonsterSprite(u64);
+#[derive(Component)] struct FeatureSprite(u64);
+#[derive(Component)] struct HudText;
+#[derive(Component)] struct InspectorText;
+
+#[derive(Clone, Copy, Debug)]
+enum Selected { Resident(u64), Monster(u64) }
+
+#[derive(Resource)]
+struct ViewerState {
+    sim:Sandbox, seed:u64, speed:f32, paused:bool, debug:bool, selected:Option<Selected>,
+}
+impl Default for ViewerState {
+    fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None} }
+}
+
+fn main() {
+    App::new()
+        .insert_resource(ClearColor(Color::srgb(0.055,0.075,0.060)))
+        .init_resource::<ViewerState>()
+        .add_plugins(DefaultPlugins.set(WindowPlugin{
+            primary_window:Some(Window{title:"Autonomous Civilization — Sim Viewer".into(),..default()}),
+            ..default()
+        }))
+        .add_systems(Startup,setup)
+        .add_systems(Update,(controls,tick_sim,sync_world,select_with_mouse,update_ui))
+        .run();
+}
+
+fn setup(mut commands:Commands,state:Res<ViewerState>) {
+    commands.spawn((Camera2d,WorldCamera));
+    commands.spawn((Sprite::from_color(Color::srgb(0.20,0.29,0.20),Vec2::new(900.0,600.0)),Transform::from_xyz(0.0,0.0,-5.0)));
+    commands.spawn((Sprite::from_color(Color::srgb(0.08,0.25,0.31),Vec2::new(46.0,560.0)),Transform::from_xyz(0.0,0.0,-3.0)));
+    for f in &state.sim.features {
+        let (color,size,z)=match f.kind {
+            FeatureKind::Vegetation=>(Color::srgb(0.12,0.40,0.16),Vec2::new(7.0,10.0),-1.0),
+            FeatureKind::RockFace=>(Color::srgb(0.36,0.36,0.32),Vec2::new(11.0,11.0),-1.0),
+            FeatureKind::DeepWater=>(Color::srgba(0.10,0.34,0.42,0.35),Vec2::new(38.0,20.0),-2.0),
+            _=>(Color::srgb(0.45,0.42,0.30),Vec2::splat(6.0),-1.0),
+        };
+        commands.spawn((Sprite::from_color(color,size),Transform::from_xyz(f.position.x,f.position.y,z),FeatureSprite(f.id)));
+    }
+    for r in &state.sim.residents {
+        commands.spawn((Sprite::from_color(Color::srgb(0.88,0.76,0.48),Vec2::new(7.0,10.0)),
+            Transform::from_xyz(r.position.x,r.position.y,1.0),ResidentSprite(r.id)));
+    }
+    commands.spawn((Text::new(""),TextFont::from_font_size(15.0),TextColor(Color::WHITE),
+        Node{position_type:PositionType::Absolute,top:px(10),left:px(12),..default()},HudText));
+    commands.spawn((Text::new(""),TextFont::from_font_size(14.0),TextColor(Color::srgb(0.88,0.92,0.86)),
+        Node{position_type:PositionType::Absolute,top:px(10),right:px(12),..default()},InspectorText));
+}
+
+fn controls(
+    keys:Res<ButtonInput<KeyCode>>,time:Res<Time>,mut state:ResMut<ViewerState>,
+    mut camera:Query<&mut Transform,With<WorldCamera>>,mut commands:Commands,
+    monsters:Query<Entity,With<MonsterSprite>>,
+) {
+    if keys.just_pressed(KeyCode::Digit1){state.speed=1.0;}
+    if keys.just_pressed(KeyCode::Digit2){state.speed=5.0;}
+    if keys.just_pressed(KeyCode::Digit3){state.speed=20.0;}
+    if keys.just_pressed(KeyCode::Digit4){state.speed=100.0;}
+    if keys.just_pressed(KeyCode::Digit5){state.speed=1000.0;}
+    if keys.just_pressed(KeyCode::Space){state.paused=!state.paused;}
+    if keys.just_pressed(KeyCode::F3){state.debug=!state.debug;}
+    if keys.just_pressed(KeyCode::KeyM){state.sim.spawn_monster();}
+    if keys.just_pressed(KeyCode::KeyR){
+        state.seed=state.seed.wrapping_add(1); state.sim=Sandbox::new(state.seed); state.selected=None;
+        for e in &monsters { commands.entity(e).despawn(); }
+    }
+    if let Ok(mut t)=camera.single_mut() {
+        let mut d=Vec2::ZERO;
+        if keys.pressed(KeyCode::KeyA)||keys.pressed(KeyCode::ArrowLeft){d.x-=1.0;}
+        if keys.pressed(KeyCode::KeyD)||keys.pressed(KeyCode::ArrowRight){d.x+=1.0;}
+        if keys.pressed(KeyCode::KeyW)||keys.pressed(KeyCode::ArrowUp){d.y+=1.0;}
+        if keys.pressed(KeyCode::KeyS)||keys.pressed(KeyCode::ArrowDown){d.y-=1.0;}
+        if d.length_squared()>0.0 { let scale=t.scale.x; t.translation+=(d.normalize()*260.0*time.delta_secs()*scale).extend(0.0); }
+        if keys.pressed(KeyCode::Equal){t.scale*=1.0-time.delta_secs()*0.8;}
+        if keys.pressed(KeyCode::Minus){t.scale*=1.0+time.delta_secs()*0.8;}
+        t.scale.x=t.scale.x.clamp(0.35,4.0); t.scale.y=t.scale.x;
+    }
+}
+
+fn tick_sim(time:Res<Time>,mut state:ResMut<ViewerState>) {
+    if state.paused{return;}
+    let days=time.delta_secs()*0.55*state.speed;
+    let steps=(days/2.0).ceil().clamp(1.0,120.0) as usize;
+    let dt=days/steps as f32;
+    for _ in 0..steps { state.sim.step(dt); }
+}
+
+fn sync_world(
+    mut commands:Commands,state:Res<ViewerState>,
+    mut residents:Query<(&ResidentSprite,&mut Transform,&mut Sprite)>,
+    mut monsters:Query<(Entity,&MonsterSprite,&mut Transform,&mut Sprite)>,
+    mut features:Query<(&FeatureSprite,&mut Transform)>,
+) {
+    for (tag,mut t,mut sprite) in &mut residents {
+        if let Some(r)=state.sim.residents.iter().find(|r|r.id==tag.0) {
+            t.translation.x=r.position.x;t.translation.y=r.position.y;
+            sprite.color=if r.health<=0.0 {Color::srgb(0.20,0.16,0.14)} else {Color::srgb(0.88,0.76,0.48)};
+        }
+    }
+    for (tag,mut t) in &mut features {
+        if let Some(f)=state.sim.features.iter().find(|f|f.id==tag.0){t.translation.x=f.position.x;t.translation.y=f.position.y;}
+    }
+    let existing:Vec<u64>=monsters.iter().map(|(_,m,_,_)|m.0).collect();
+    for m in &state.sim.monsters {
+        if !existing.contains(&m.id) {
+            commands.spawn((Sprite::from_color(Color::srgb(0.72,0.16,0.13),Vec2::splat(15.0)),
+                Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id)));
+        }
+    }
+    for (e,tag,mut t,mut sprite) in &mut monsters {
+        if let Some(m)=state.sim.monsters.iter().find(|m|m.id==tag.0) {
+            t.translation.x=m.position.x;t.translation.y=m.position.y;
+            sprite.color=if m.health<=0.0 {Color::srgb(0.20,0.08,0.07)} else {Color::srgb(0.72,0.16,0.13)};
+        } else { commands.entity(e).despawn(); }
+    }
+}
+
+fn select_with_mouse(
+    buttons:Res<ButtonInput<MouseButton>>,window:Query<&Window,With<PrimaryWindow>>,
+    camera:Query<(&Camera,&GlobalTransform,&Transform),With<WorldCamera>>,mut state:ResMut<ViewerState>,
+) {
+    if !buttons.just_pressed(MouseButton::Left){return;}
+    let Ok(w)=window.single() else{return;}; let Some(cursor)=w.cursor_position() else{return;};
+    let Ok((cam,global,cam_t))=camera.single() else{return;};
+    let Ok(world)=cam.viewport_to_world_2d(global,cursor) else{return;};
+    let threshold=18.0*cam_t.scale.x;
+    let mut best:(f32,Option<Selected>)=(threshold,None);
+    for r in &state.sim.residents {
+        let d=world.distance(Vec2::new(r.position.x,r.position.y));
+        if d<best.0 {best=(d,Some(Selected::Resident(r.id)));}
+    }
+    for m in &state.sim.monsters {
+        let d=world.distance(Vec2::new(m.position.x,m.position.y));
+        if d<best.0 {best=(d,Some(Selected::Monster(m.id)));}
+    }
+    state.selected=best.1;
+}
+
+fn update_ui(
+    state:Res<ViewerState>,mut hud:Query<&mut Text,(With<HudText>,Without<InspectorText>)>,
+    mut inspector:Query<&mut Text,(With<InspectorText>,Without<HudText>)>,
+) {
+    if let Ok(mut t)=hud.single_mut() {
+        let alive=state.sim.residents.iter().filter(|r|r.health>0.0).count();
+        t.0=format!("SEED {}   YEAR {:.2}   RESIDENTS {}/{}   MONSTERS {}\nSPEED x{} {}   [1-5 speed] [Space pause] [M monster] [R new seed] [F3 debug]\n[WASD pan] [+/- zoom] [Click resident/monster]",
+            state.seed,state.sim.year,alive,state.sim.residents.len(),state.sim.monsters.iter().filter(|m|m.health>0.0).count(),
+            state.speed as u32,if state.paused{"PAUSED"}else{""});
+    }
+    if let Ok(mut t)=inspector.single_mut() {
+        t.0=match state.selected {
+            None=>"CLICK AN ENTITY\n\nF3 toggles internal cognition".into(),
+            Some(Selected::Resident(id))=>state.sim.residents.iter().find(|r|r.id==id).map(|r|{
+                let mut s=format!("RESIDENT #{}\nHP {:.0}%   ACTION {:?}\n\nNeeds\nhunger {:.2} safety {:.2} curiosity {:.2}\n",r.id,r.health*100.0,r.current_action,r.mind.needs.hunger,r.mind.needs.safety,r.mind.needs.curiosity);
+                if state.debug {
+                    s.push_str(&format!("\nTraits\naggr {:.2} risk {:.2} curious {:.2}\nempathy {:.2} conform {:.2} persist {:.2}\n\nDecision scores\n",
+                        r.mind.traits.aggression,r.mind.traits.risk_tolerance,r.mind.traits.curiosity,r.mind.traits.empathy,r.mind.traits.conformity,r.mind.traits.persistence));
+                    for q in &r.top_scores {s.push_str(&format!("{:?}: {:+.3}\n",q.action,q.score));}
+                    s.push_str(&format!("\nMemory episodes {}",r.memory.episodes.len()));
+                }
+                s
+            }).unwrap_or_else(||"resident no longer exists".into()),
+            Some(Selected::Monster(id))=>state.sim.monsters.iter().find(|m|m.id==id).map(|m|
+                format!("MONSTER #{}\nHP {:.0}%\nhunger {:.2}\naggression {:.2}\nposition {:.0}, {:.0}",m.id,m.health*100.0,m.hunger,m.aggression,m.position.x,m.position.y)
+            ).unwrap_or_else(||"monster no longer exists".into()),
+        };
+    }
+}
