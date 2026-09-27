@@ -315,14 +315,23 @@ impl Sandbox {
 
         // Local teaching: nearby residents can pass imperfect knowledge according to trust.
         let teachers:Vec<_>=self.residents.iter().filter(|r|r.health>0.0&&!r.knowledge.items.is_empty())
-            .map(|r|(r.id,r.position,r.knowledge.clone())).collect();
+            .map(|r|(r.id,r.position,r.knowledge.clone(),r.practice.clone())).collect();
         for r in &mut self.residents {
-            for (teacher,pos,knowledge) in &teachers {
+            for (teacher,pos,knowledge,practice) in &teachers {
                 if *teacher==r.id {continue;} let d=dist(r.position,*pos);
                 if d<=16.0 && r.mind.traits.social_trust>0.35 {
                     let trust=(0.25+r.mind.traits.social_trust*0.65).clamp(0.0,1.0);
                     let distortion=signed(self.seed,r.id.wrapping_mul(911_003)+*teacher)*0.12;
                     knowledge.transmit_to(&mut r.knowledge,trust,distortion);
+                    let learner_stage=r.life.stage(self.year);
+                    let teaching_gain=match learner_stage {LifeStage::Child=>1.8,LifeStage::Adolescent=>1.4,_=>0.65};
+                    for (action,skill) in practice.dominant(3) {
+                        if skill>0.12 {
+                            r.practice.practice(action,skill*trust,days*0.10*teaching_gain,self.year);
+                            let old=*r.mind.learned_action_value.get(&action).unwrap_or(&0.0);
+                            r.mind.learned_action_value.insert(action,old+(skill-old)*0.015*trust*teaching_gain);
+                        }
+                    }
                 }
             }
         }
