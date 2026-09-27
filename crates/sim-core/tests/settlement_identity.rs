@@ -2,7 +2,7 @@ use sim_core::{culture::CulturalField,settlement_identity::{nearest_identity,Set
 use std::collections::BTreeMap;
 
 fn village(id:u64,x:f32)->SettlementIdentity {
-    SettlementIdentity{id,center:Position{x,y:0.0},founded_year:0.0,last_seen_year:0.0,members:vec![],
+    SettlementIdentity{id,center:Position{x,y:0.0},founded_year:0.0,last_seen_year:0.0,parent_id:None,members:vec![],
         culture:CulturalField::default(),shared_food:0.0,shared_material:0.0,knowledge_items:0,specialization:BTreeMap::new()}
 }
 
