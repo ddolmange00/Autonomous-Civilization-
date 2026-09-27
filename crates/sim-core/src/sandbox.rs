@@ -579,6 +579,7 @@ impl Sandbox {
         let positions:Vec<Position>=alive.iter().map(|r|r.position).collect();
         let resident_ids:Vec<u64>=alive.iter().map(|r|r.id).collect();
         let clusters=detect_settlements(&positions,45.0,3);
+        let previous_membership:BTreeMap<u64,u64>=self.settlements.iter().flat_map(|s|s.members.iter().map(move |id|(*id,s.id))).collect();
         let mut seen:BTreeSet<u64>=BTreeSet::new();
 
         for cluster in clusters {
@@ -587,12 +588,16 @@ impl Sandbox {
                 let d=dist(cluster.center,s.center);(d<=90.0).then_some((i,d))
             }).min_by(|a,b|a.1.total_cmp(&b.1)).map(|x|x.0);
             let si=if let Some(i)=idx {i} else {
+                let mut ancestry:BTreeMap<u64,usize>=BTreeMap::new();
+                for rid in &ids {if let Some(parent)=previous_membership.get(rid){*ancestry.entry(*parent).or_default()+=1;}}
+                let parent_id=ancestry.into_iter().max_by_key(|(_,n)|*n).map(|(id,_)|id);
                 let id=self.next_id; self.next_id+=1;
                 self.settlements.push(SettlementIdentity{
-                    id,center:cluster.center,founded_year:self.year,last_seen_year:self.year,members:vec![],
+                    id,center:cluster.center,founded_year:self.year,last_seen_year:self.year,parent_id,members:vec![],
                     culture:CulturalField::default(),shared_food:0.0,shared_material:0.0,knowledge_items:0,specialization:BTreeMap::new(),
                 });
-                self.causal_log.push(self.year,CausalNode::Outcome{resident_id:None,label:format!("settlement {} emerged",id),value:0.7});
+                let label=parent_id.map(|p|format!("settlement {} split from {}",id,p)).unwrap_or_else(||format!("settlement {} emerged",id));
+                self.causal_log.push(self.year,CausalNode::Outcome{resident_id:None,label,value:0.7});
                 self.settlements.len()-1
             };
             let identity=&mut self.settlements[si];
