@@ -236,6 +236,8 @@ fn controls(
     if keys.just_pressed(KeyCode::F7)&&state.monster_lab{state.monster_blueprint.skin=state.monster_blueprint.skin.resize_nearest(24,24);}
     if keys.just_pressed(KeyCode::F8)&&state.monster_lab{state.monster_blueprint.skin=state.monster_blueprint.skin.resize_nearest(32,32);}
     if keys.just_pressed(KeyCode::F9)&&state.monster_lab{state.monster_blueprint.archetype=state.monster;state.blueprint_library.save(state.monster_blueprint.clone());}
+    if keys.just_pressed(KeyCode::F10)&&state.monster_lab&&!state.blueprint_library.monsters.is_empty(){let next=state.blueprint_library.monsters.iter().position(|b|b.id==state.monster_blueprint.id).map(|i|(i+1)%state.blueprint_library.monsters.len()).unwrap_or(0);state.monster_blueprint=state.blueprint_library.monsters[next].clone();state.monster=state.monster_blueprint.archetype;}
+    if keys.just_pressed(KeyCode::F11)&&state.monster_lab&&!state.blueprint_library.monsters.is_empty(){let prev=state.blueprint_library.monsters.iter().position(|b|b.id==state.monster_blueprint.id).map(|i|(i+state.blueprint_library.monsters.len()-1)%state.blueprint_library.monsters.len()).unwrap_or(0);state.monster_blueprint=state.blueprint_library.monsters[prev].clone();state.monster=state.monster_blueprint.archetype;}
     if state.monster_lab {
         if keys.just_pressed(KeyCode::KeyC){for p in &mut state.monster_blueprint.skin.pixels{*p=PixelCell::default();}}
         if keys.just_pressed(KeyCode::KeyR){for y in 0..state.monster_blueprint.skin.height{for x in 0..state.monster_blueprint.skin.width{let on=((x as u64*17+y as u64*31+state.seed)%7)<3;if on{state.monster_blueprint.skin.set(x,y,PixelCell{filled:true,palette:1,emissive:false});}}}}
@@ -429,7 +431,7 @@ fn update_ui(
         if state.monster_lab {
             let skin=&state.monster_blueprint.skin;let mut grid=String::new();
             for y in 0..skin.height{for x in 0..skin.width{let p=skin.pixels[skin.index(x,y).unwrap()];grid.push(if p.filled{'#'}else{'·'});}grid.push('\n');}
-            t.0=format!("MONSTER LAB — {}x{}  [L close] [C clear] [R seed silhouette] [; mirror {}]\n{}\ncoverage {:.0}% · scale {:.1}\nMASS {:.0}kg SPEED {:.2} AGGR {:.2}\n(pixel mouse editor next)",skin.width,skin.height,if state.monster_mirror{"ON"}else{"OFF"},grid,skin.filled_fraction()*100.0,state.monster_blueprint.scale,state.monster.body_mass_kg,state.monster.speed,state.monster.aggression);
+            t.0=format!("MONSTER LAB — {}x{}  [L close] [C clear] [R seed silhouette] [; mirror {}]\n{}\ncoverage {:.0}% · scale {:.1}\nMASS {:.0}kg SPEED {:.2} AGGR {:.2}\nLMB paint · RMB erase · F fill · E emissive\nF6/F7/F8 16/24/32 · F9 save · F10/F11 library",skin.width,skin.height,if state.monster_mirror{"ON"}else{"OFF"},grid,skin.filled_fraction()*100.0,state.monster_blueprint.scale,state.monster.body_mass_kg,state.monster.speed,state.monster.aggression);
         }
     }
     if let Ok(mut t)=inspector.single_mut() {
