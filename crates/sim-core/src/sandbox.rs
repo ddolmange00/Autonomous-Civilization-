@@ -236,9 +236,26 @@ impl Sandbox {
             }
             let value=if chosen.action==ActionPrimitive::Avoid {chosen.expected.safety} else {chosen.expected.food+chosen.expected.knowledge+chosen.expected.status-chosen.expected.physical_risk};
             r.mind.learn_action(chosen.action,value,0.04);
+            if matches!(chosen.action,ActionPrimitive::Observe|ActionPrimitive::Experiment|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Dig) {
+                r.knowledge.learn(format!("action::{:?}",chosen.action),value,0.18+chosen.expected.knowledge*0.5);
+            }
             r.memory.remember(Episode{year:self.year,action:chosen.action,target:chosen.target,value,surprise:chosen.uncertainty,
                 danger:chosen.expected.physical_risk,social_visibility:0.2});
         }
+        // Local teaching: nearby residents can pass imperfect knowledge according to trust.
+        let teachers:Vec<_>=self.residents.iter().filter(|r|r.health>0.0&&!r.knowledge.items.is_empty())
+            .map(|r|(r.id,r.position,r.knowledge.clone())).collect();
+        for r in &mut self.residents {
+            for (teacher,pos,knowledge) in &teachers {
+                if *teacher==r.id {continue;} let d=dist(r.position,*pos);
+                if d<=16.0 && r.mind.traits.social_trust>0.35 {
+                    let trust=(0.25+r.mind.traits.social_trust*0.65).clamp(0.0,1.0);
+                    let distortion=signed(self.seed,r.id.wrapping_mul(911_003)+*teacher)*0.12;
+                    knowledge.transmit_to(&mut r.knowledge,trust,distortion);
+                }
+            }
+        }
+
         // Local hearsay: nearby residents may transmit their strongest creature-threat report.
         let reports:Vec<_>=self.residents.iter().filter_map(|r|r.awareness.reports.get(&SituationKind::CreatureThreat).copied().map(|q|(r.id,r.position,q))).collect();
         for r in &mut self.residents {
