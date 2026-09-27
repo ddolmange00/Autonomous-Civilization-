@@ -12,6 +12,7 @@ use sim_core::{causal_log::CausalNode,affordances::FeatureKind, awareness::Situa
 #[derive(Component)] struct ToolText;
 #[derive(Component)] struct EventOverlay(u64);
 #[derive(Component)] struct ToolPreview;
+#[derive(Component)] struct WorldDynamic;
 #[derive(Component,Clone,Copy)] struct GodButton(GodTool);
 #[derive(Component)] struct ToolContextText;
 #[derive(Component)] struct MonsterLabText;
@@ -29,7 +30,7 @@ impl GodTool { fn category(self)->ToolCategory { match self {
 } } }
 
 #[derive(Clone, Copy, Debug)]
-enum Selected { Resident(u64), Monster(u64), Settlement }
+enum Selected { Resident(u64), Animal(u64), Monster(u64), Settlement }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum GodTool { Inspect, Resident, Animal, Monster, Vegetation, Mineral, Rain, Drought, Fire, Flood, Earthquake }
@@ -78,11 +79,11 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
             FeatureKind::DeepWater=>(Color::srgba(0.10,0.34,0.42,0.35),Vec2::new(38.0,20.0),-2.0),
             _=>(Color::srgb(0.45,0.42,0.30),Vec2::splat(6.0),-1.0),
         };
-        commands.spawn((Sprite::from_color(color,size),Transform::from_xyz(f.position.x,f.position.y,z),FeatureSprite(f.id)));
+        commands.spawn((Sprite::from_color(color,size),Transform::from_xyz(f.position.x,f.position.y,z),FeatureSprite(f.id),WorldDynamic));
     }
     for r in &state.sim.residents {
         commands.spawn((Sprite::from_color(Color::srgb(0.88,0.76,0.48),Vec2::new(7.0,10.0)),
-            Transform::from_xyz(r.position.x,r.position.y,1.0),ResidentSprite(r.id)));
+            Transform::from_xyz(r.position.x,r.position.y,1.0),ResidentSprite(r.id),WorldDynamic)));
     }
     commands.spawn((Text::new(""),TextFont::from_font_size(15.0),TextColor(Color::WHITE),
         Node{position_type:PositionType::Absolute,top:px(10),left:px(12),..default()},HudText));
@@ -118,15 +119,17 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
 }
 
 fn god_button_interactions(
-    mut q:Query<(&Interaction,&GodButton,&mut BackgroundColor),(Changed<Interaction>,With<Button>)>,
+    mut q:Query<(&Interaction,&GodButton,&mut BackgroundColor),With<Button>>,
     mut state:ResMut<ViewerState>,
 ) {
     for (interaction,button,mut bg) in &mut q {
-        match *interaction {
-            Interaction::Pressed=>{state.tool=button.0;*bg=BackgroundColor(Color::srgb(0.30,0.28,0.16));}
-            Interaction::Hovered=>{*bg=BackgroundColor(Color::srgb(0.20,0.21,0.16));}
-            Interaction::None=>{*bg=BackgroundColor(Color::srgb(0.11,0.13,0.11));}
-        }
+        if *interaction==Interaction::Pressed {state.tool=button.0;}
+        let selected=state.tool==button.0;
+        *bg=BackgroundColor(match *interaction {
+            Interaction::Pressed=>Color::srgb(0.34,0.31,0.17),
+            Interaction::Hovered=>if selected{Color::srgb(0.30,0.28,0.16)}else{Color::srgb(0.20,0.21,0.16)},
+            Interaction::None=>if selected{Color::srgb(0.26,0.24,0.14)}else{Color::srgb(0.11,0.13,0.11)},
+        });
     }
 }
 
@@ -196,7 +199,7 @@ fn sync_monster_lab(
 fn controls(
     keys:Res<ButtonInput<KeyCode>>,time:Res<Time>,mut state:ResMut<ViewerState>,
     mut camera:Query<&mut Transform,With<WorldCamera>>,mut commands:Commands,
-    monsters:Query<Entity,With<MonsterSprite>>,
+    dynamic:Query<Entity,With<WorldDynamic>>,
 ) {
     if keys.just_pressed(KeyCode::Digit1){state.speed=1.0;}
     if keys.just_pressed(KeyCode::Digit2){state.speed=5.0;}
@@ -253,7 +256,7 @@ fn controls(
     if keys.just_pressed(KeyCode::KeyV){state.selected=Some(Selected::Settlement);}
     if keys.just_pressed(KeyCode::KeyR)&&!state.monster_lab{
         state.seed=state.seed.wrapping_add(1); state.sim=Sandbox::new(state.seed); state.selected=None;
-        for e in &monsters { commands.entity(e).despawn(); }
+        for e in &dynamic { commands.entity(e).despawn(); }
     }
     if let Ok(mut t)=camera.single_mut() {
         let mut d=Vec2::ZERO;
@@ -283,9 +286,10 @@ fn sync_world(
     mut animals:Query<(Entity,&AnimalSprite,&mut Transform,&mut Sprite)>,
     mut monster_pixels:Query<(&MonsterPixel,&mut Transform)>,
     mut features:Query<(Entity,&FeatureSprite,&mut Transform)>,
+    overlays:Query<(Entity,&EventOverlay)>,
 ) {
     let existing_residents:Vec<u64>=residents.iter().map(|(_,r,_,_)|r.0).collect();
-    for r in &state.sim.residents {if !existing_residents.contains(&r.id){commands.spawn((Sprite::from_color(Color::srgb(0.88,0.76,0.48),Vec2::new(7.0,10.0)),Transform::from_xyz(r.position.x,r.position.y,1.0),ResidentSprite(r.id)));}}
+    for r in &state.sim.residents {if !existing_residents.contains(&r.id){commands.spawn((Sprite::from_color(Color::srgb(0.88,0.76,0.48),Vec2::new(7.0,10.0)),Transform::from_xyz(r.position.x,r.position.y,1.0),ResidentSprite(r.id),WorldDynamic));}}
     for (_,tag,mut t,mut sprite) in &mut residents {
         if let Some(r)=state.sim.residents.iter().find(|r|r.id==tag.0) {
             t.translation.x=r.position.x;t.translation.y=r.position.y;
@@ -302,7 +306,7 @@ fn sync_world(
                 FeatureKind::LooseMaterial=>(Color::srgb(0.56,0.48,0.34),Vec2::new(6.0,6.0),-0.8),
                 _=>(Color::srgb(0.45,0.42,0.30),Vec2::splat(6.0),-1.0),
             };
-            commands.spawn((Sprite::from_color(color,size),Transform::from_xyz(f.position.x,f.position.y,z),FeatureSprite(f.id)));
+            commands.spawn((Sprite::from_color(color,size),Transform::from_xyz(f.position.x,f.position.y,z),FeatureSprite(f.id),WorldDynamic));
         }
     }
     for (_,tag,mut t) in &mut features {
@@ -312,7 +316,7 @@ fn sync_world(
     for a in &state.sim.animals {
         if !existing_animals.contains(&a.id) {
             commands.spawn((Sprite::from_color(Color::srgb(0.70,0.62,0.42),Vec2::new(9.0,7.0)),
-                Transform::from_xyz(a.position.x,a.position.y,1.1),AnimalSprite(a.id)));
+                Transform::from_xyz(a.position.x,a.position.y,1.1),AnimalSprite(a.id),WorldDynamic)));
         }
     }
     for (e,tag,mut t,mut sprite) in &mut animals {
@@ -326,7 +330,7 @@ fn sync_world(
         if !existing.contains(&m.id) {
             if let Some(skin)=&m.skin {
                 let scale=(18.0/skin.width.max(skin.height) as f32).max(0.5);
-                commands.spawn((Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id)))
+                commands.spawn((Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id),WorldDynamic))
                     .with_children(|p|{
                         for y in 0..skin.height {for x in 0..skin.width {
                             let cell=skin.pixels[skin.index(x,y).unwrap()]; if !cell.filled{continue;}
@@ -338,7 +342,7 @@ fn sync_world(
                     });
             } else {
                 commands.spawn((Sprite::from_color(Color::srgb(0.72,0.16,0.13),Vec2::splat(15.0)),
-                    Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id)));
+                    Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id),WorldDynamic)));
             }
         }
     }
@@ -353,6 +357,9 @@ fn sync_world(
             let (dx,dy)=if let Some(bp)=&m.blueprint{anchored_pixel_offset(bp,tag.x,tag.y,m.motion,m.motion_phase)}else{pixel_offset(tag.x,tag.y,tag.width,tag.height,m.motion,m.motion_phase)};
             t.translation.x=tag.base_x+dx;t.translation.y=tag.base_y+dy;
         }
+    }
+    for (e,overlay) in &overlays {
+        if !state.sim.events.iter().any(|event|event.id==overlay.0) {commands.entity(e).despawn();}
     }
 
 }
@@ -387,9 +394,10 @@ fn tool_preview(
 fn world_click(
     buttons:Res<ButtonInput<MouseButton>>,window:Query<&Window,With<PrimaryWindow>>,
     camera:Query<(&Camera,&GlobalTransform,&Transform),With<WorldCamera>>,mut state:ResMut<ViewerState>,
-    mut commands:Commands,
+    ui_buttons:Query<&Interaction,With<Button>>,mut commands:Commands,
 ) {
     if !buttons.just_pressed(MouseButton::Left){return;}
+    if state.monster_lab || ui_buttons.iter().any(|i|*i!=Interaction::None){return;}
     let Ok(w)=window.single() else{return;}; let Some(cursor)=w.cursor_position() else{return;};
     let Ok((cam,global,cam_t))=camera.single() else{return;};
     let Ok(world)=cam.viewport_to_world_2d(global,cursor) else{return;};
@@ -416,7 +424,7 @@ fn world_click(
             };
             let radius=state.tool_radius; let intensity=state.tool_intensity;
             let id=state.sim.inject_event(kind,p,radius,intensity,duration);
-            commands.spawn((Sprite::from_color(color,Vec2::splat(radius*2.0)),Transform::from_xyz(p.x,p.y,0.5),EventOverlay(id)));
+            commands.spawn((Sprite::from_color(color,Vec2::splat(radius*2.0)),Transform::from_xyz(p.x,p.y,0.5),EventOverlay(id),WorldDynamic));
         }
     }
 }
@@ -465,6 +473,9 @@ fn update_ui(
                 }
                 s
             }).unwrap_or_else(||"resident no longer exists".into()),
+            Some(Selected::Animal(id))=>state.sim.animals.iter().find(|a|a.id==id).map(|a|
+                format!("ANIMAL #{}\nHP {:.0}%  hunger {:.2}\nMASS {:.0}kg speed {:.2}\nfear {:.2} aggr {:.2} reproduction {:.2}\nposition {:.0}, {:.0}",a.id,a.health*100.0,a.hunger,a.archetype.body_mass_kg,a.archetype.speed,a.archetype.fear,a.archetype.aggression,a.archetype.reproduction,a.position.x,a.position.y)
+            ).unwrap_or_else(||"animal no longer exists".into()),
             Some(Selected::Monster(id))=>state.sim.monsters.iter().find(|m|m.id==id).map(|m|
                 format!("MONSTER #{}\nHP {:.0}%  hunger {:.2}\nMASS {:.0}kg speed {:.2}\naggr {:.2} armor {:.2} intel {:.2}\nposition {:.0}, {:.0}",m.id,m.health*100.0,m.hunger,m.archetype.body_mass_kg,m.archetype.speed,m.archetype.aggression,m.archetype.armor,m.archetype.intelligence,m.position.x,m.position.y)
             ).unwrap_or_else(||"monster no longer exists".into()),
