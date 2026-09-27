@@ -1,3 +1,6 @@
+pub mod settlement_detection;
+pub mod generation;
+pub mod social_dynamics;
 pub mod households;
 pub mod knowledge;
 pub mod life_history;
