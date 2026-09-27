@@ -126,6 +126,7 @@ fn sync_world(
     mut commands:Commands,state:Res<ViewerState>,
     mut residents:Query<(&ResidentSprite,&mut Transform,&mut Sprite)>,
     mut monsters:Query<(Entity,&MonsterSprite,&mut Transform,&mut Sprite)>,
+    mut animals:Query<(Entity,&AnimalSprite,&mut Transform,&mut Sprite)>,
     mut features:Query<(&FeatureSprite,&mut Transform)>,
 ) {
     for (tag,mut t,mut sprite) in &mut residents {
@@ -136,6 +137,19 @@ fn sync_world(
     }
     for (tag,mut t) in &mut features {
         if let Some(f)=state.sim.features.iter().find(|f|f.id==tag.0){t.translation.x=f.position.x;t.translation.y=f.position.y;}
+    }
+    let existing_animals:Vec<u64>=animals.iter().map(|(_,a,_,_)|a.0).collect();
+    for a in &state.sim.animals {
+        if !existing_animals.contains(&a.id) {
+            commands.spawn((Sprite::from_color(Color::srgb(0.70,0.62,0.42),Vec2::new(9.0,7.0)),
+                Transform::from_xyz(a.position.x,a.position.y,1.1),AnimalSprite(a.id)));
+        }
+    }
+    for (e,tag,mut t,mut sprite) in &mut animals {
+        if let Some(a)=state.sim.animals.iter().find(|a|a.id==tag.0) {
+            t.translation.x=a.position.x;t.translation.y=a.position.y;
+            sprite.color=if a.health<=0.0 {Color::srgb(0.20,0.16,0.12)} else {Color::srgb(0.70,0.62,0.42)};
+        } else {commands.entity(e).despawn();}
     }
     let existing:Vec<u64>=monsters.iter().map(|(_,m,_,_)|m.0).collect();
     for m in &state.sim.monsters {
