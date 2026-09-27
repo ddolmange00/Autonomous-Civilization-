@@ -183,11 +183,15 @@ fn world_click(
             for m in &state.sim.monsters {let d=world.distance(Vec2::new(m.position.x,m.position.y));if d<best.0{best=(d,Some(Selected::Monster(m.id)));}}
             state.selected=best.1;
         }
-        GodTool::Monster=>{
-            state.sim.spawn_monster_at(p);
-        }
-        GodTool::Fire|GodTool::Flood|GodTool::Earthquake=>{
+        GodTool::Resident=>state.sim.spawn_resident_at(p),
+        GodTool::Animal=>state.sim.spawn_animal_at(p),
+        GodTool::Monster=>state.sim.spawn_monster_at(p),
+        GodTool::Vegetation=>state.sim.grow_vegetation_at(p,(8.0+state.tool_intensity*12.0) as u32),
+        GodTool::Mineral=>state.sim.deposit_minerals_at(p,(4.0+state.tool_intensity*7.0) as u32),
+        GodTool::Rain|GodTool::Drought|GodTool::Fire|GodTool::Flood|GodTool::Earthquake=>{
             let (kind,duration,color)=match state.tool {
+                GodTool::Rain=>(WorldEventKind::Rain,18.0,Color::srgba(0.30,0.55,0.85,0.12)),
+                GodTool::Drought=>(WorldEventKind::Drought,90.0,Color::srgba(0.78,0.62,0.25,0.13)),
                 GodTool::Fire=>(WorldEventKind::Fire,24.0,Color::srgba(0.95,0.25,0.08,0.20)),
                 GodTool::Flood=>(WorldEventKind::Flood,18.0,Color::srgba(0.12,0.48,0.78,0.18)),
                 _=>(WorldEventKind::Earthquake,2.0,Color::srgba(0.75,0.62,0.35,0.16)),
@@ -210,7 +214,7 @@ fn update_ui(
             state.seed,state.sim.year,alive,state.sim.residents.len(),state.sim.monsters.iter().filter(|m|m.health>0.0).count(),
             state.speed as u32,if state.paused{"PAUSED"}else{""});
     }
-    if let Ok(mut t)=tool.single_mut(){t.0=format!("GOD DOCK   [I] Inspect   [M] Monster   [F] Fire   [G] Flood   [Q] Quake     ACTIVE: {}   radius {:.0}   intensity {:.1}   [[ / ]] radius   [, / .] power",state.tool.label(),state.tool_radius,state.tool_intensity);}
+    if let Ok(mut t)=tool.single_mut(){t.0=format!("GOD DOCK  [I] Inspect [H] Human [Z] Animal [M] Monster [T] Trees [O] Ore [N] Rain [X] Drought [F] Fire [G] Flood [Q] Quake\nACTIVE: {}   radius {:.0}   intensity {:.1}   [[ / ]] radius   [, / .] power",state.tool.label(),state.tool_radius,state.tool_intensity);}
     if let Ok(mut t)=inspector.single_mut() {
         t.0=match state.selected {
             None=>"CLICK AN ENTITY\n\nF3 toggles internal cognition".into(),
