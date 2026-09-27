@@ -1,3 +1,4 @@
+pub mod blueprints;
 pub mod resource_kinds;
 pub mod species;
 pub mod causal_log;
