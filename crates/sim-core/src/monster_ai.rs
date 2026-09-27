@@ -30,11 +30,11 @@ pub fn decide(c: MonsterContext) -> MonsterState {
 mod tests {
     use super::*;
     #[test] fn starving_aggressive_monster_can_choose_settlement() {
-        let s=decide(MonsterContext{hunger:.95,wildlife_food:.02,settlement_food:.9,distance_to_settlement:5.,perceived_defense:.1,aggression:.9,intelligence:.4,health:1.});
+        let s=decide(MonsterContext{hunger:0.95,wildlife_food:0.02,settlement_food:0.9,distance_to_settlement:5.,perceived_defense:0.1,aggression:0.9,intelligence:0.4,health:1.});
         assert_eq!(s,MonsterState::ApproachSettlement);
     }
     #[test] fn wounded_monster_can_retreat() {
-        let s=decide(MonsterContext{hunger:.8,wildlife_food:.1,settlement_food:.8,distance_to_settlement:.5,perceived_defense:.9,aggression:.8,intelligence:.7,health:.1});
+        let s=decide(MonsterContext{hunger:0.8,wildlife_food:0.1,settlement_food:0.8,distance_to_settlement:0.5,perceived_defense:0.9,aggression:0.8,intelligence:0.7,health:0.1});
         assert_eq!(s,MonsterState::Retreat);
     }
 }
