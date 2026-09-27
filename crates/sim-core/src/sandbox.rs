@@ -583,7 +583,9 @@ impl Sandbox {
 
         for cluster in clusters {
             let ids=cluster_member_ids(&cluster,&resident_ids);
-            let idx=nearest_identity(cluster.center,&self.settlements,90.0);
+            let idx=self.settlements.iter().enumerate().filter(|(_,s)|!seen.contains(&s.id)).filter_map(|(i,s)|{
+                let d=dist(cluster.center,s.center);(d<=90.0).then_some((i,d))
+            }).min_by(|a,b|a.1.total_cmp(&b.1)).map(|x|x.0);
             let si=if let Some(i)=idx {i} else {
                 let id=self.next_id; self.next_id+=1;
                 self.settlements.push(SettlementIdentity{
