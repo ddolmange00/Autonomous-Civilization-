@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, world::Position};
+use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, species::{AnimalArchetype,MonsterArchetype}, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
@@ -37,9 +37,10 @@ impl GodTool { fn label(self)->&'static str { match self {
 struct ViewerState {
     sim:Sandbox, seed:u64, speed:f32, paused:bool, debug:bool, selected:Option<Selected>,
     tool:GodTool, tool_radius:f32, tool_intensity:f32,
+    animal:AnimalArchetype, monster:MonsterArchetype,
 }
 impl Default for ViewerState {
-    fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None,tool:GodTool::Inspect,tool_radius:70.0,tool_intensity:0.8} }
+    fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None,tool:GodTool::Inspect,tool_radius:70.0,tool_intensity:0.8,animal:AnimalArchetype::default(),monster:MonsterArchetype::default()} }
 }
 
 fn main() {
@@ -139,6 +140,12 @@ fn controls(
     if keys.just_pressed(KeyCode::BracketRight){state.tool_radius=(state.tool_radius+10.0).min(240.0);}
     if keys.just_pressed(KeyCode::Comma){state.tool_intensity=(state.tool_intensity-0.1).max(0.1);}
     if keys.just_pressed(KeyCode::Period){state.tool_intensity=(state.tool_intensity+0.1).min(2.0);}
+    if keys.just_pressed(KeyCode::KeyJ){state.monster.body_mass_kg=(state.monster.body_mass_kg*0.75).max(10.0);}
+    if keys.just_pressed(KeyCode::KeyK){state.monster.body_mass_kg=(state.monster.body_mass_kg*1.33).min(20_000.0);}
+    if keys.just_pressed(KeyCode::KeyU){state.monster.speed=(state.monster.speed-0.1).max(0.05);}
+    if keys.just_pressed(KeyCode::KeyY){state.monster.speed=(state.monster.speed+0.1).min(2.0);}
+    if keys.just_pressed(KeyCode::KeyB){state.monster.aggression=(state.monster.aggression-0.1).max(0.0);}
+    if keys.just_pressed(KeyCode::KeyP){state.monster.aggression=(state.monster.aggression+0.1).min(1.0);}
     if keys.just_pressed(KeyCode::KeyV){state.selected=Some(Selected::Settlement);}
     if keys.just_pressed(KeyCode::KeyR){
         state.seed=state.seed.wrapping_add(1); state.sim=Sandbox::new(state.seed); state.selected=None;
@@ -267,8 +274,8 @@ fn world_click(
             state.selected=best.1;
         }
         GodTool::Resident=>state.sim.spawn_resident_at(p),
-        GodTool::Animal=>state.sim.spawn_animal_at(p),
-        GodTool::Monster=>state.sim.spawn_monster_at(p),
+        GodTool::Animal=>state.sim.spawn_animal_with(p,state.animal),
+        GodTool::Monster=>state.sim.spawn_monster_with(p,state.monster),
         GodTool::Vegetation=>state.sim.grow_vegetation_at(p,(8.0+state.tool_intensity*12.0) as u32),
         GodTool::Mineral=>state.sim.deposit_minerals_at(p,(4.0+state.tool_intensity*7.0) as u32),
         GodTool::Rain|GodTool::Drought|GodTool::Fire|GodTool::Flood|GodTool::Earthquake=>{
@@ -302,7 +309,11 @@ fn update_ui(
     if let Ok(mut t)=context.single_mut(){
         let cat=match state.tool.category(){ToolCategory::Observe=>"OBSERVE",ToolCategory::Life=>"LIFE",ToolCategory::Nature=>"NATURE",ToolCategory::Disaster=>"DISASTER"};
         let hint=match state.tool {GodTool::Inspect=>"click an entity",GodTool::Resident=>"spawn autonomous resident",GodTool::Animal=>"spawn wildlife",GodTool::Monster=>"spawn hostile pressure",GodTool::Vegetation=>"grow local vegetation",GodTool::Mineral=>"deposit material patch",GodTool::Rain=>"local rainfall event",GodTool::Drought=>"local water stress",GodTool::Fire=>"local fire pressure",GodTool::Flood=>"local flood pressure",GodTool::Earthquake=>"local seismic pressure"};
-        t.0=format!("{} / {}\n{}\nradius {:.0} · power {:.1}",cat,state.tool.label(),hint,state.tool_radius,state.tool_intensity);
+        t.0=if state.tool==GodTool::Monster {
+            format!("{} / {}\n{}\nMASS {:.0}kg [J/K]  SPEED {:.2} [U/Y]\nAGGR {:.2} [B/P]  armor {:.2}  intel {:.2}",cat,state.tool.label(),hint,state.monster.body_mass_kg,state.monster.speed,state.monster.aggression,state.monster.armor,state.monster.intelligence)
+        } else if state.tool==GodTool::Animal {
+            format!("{} / {}\n{}\nMASS {:.0}kg  SPEED {:.2}\nFEAR {:.2}  AGGR {:.2}",cat,state.tool.label(),hint,state.animal.body_mass_kg,state.animal.speed,state.animal.fear,state.animal.aggression)
+        } else {format!("{} / {}\n{}\nradius {:.0} · power {:.1}",cat,state.tool.label(),hint,state.tool_radius,state.tool_intensity)};
     }
     if let Ok(mut t)=inspector.single_mut() {
         t.0=match state.selected {
@@ -318,7 +329,7 @@ fn update_ui(
                 s
             }).unwrap_or_else(||"resident no longer exists".into()),
             Some(Selected::Monster(id))=>state.sim.monsters.iter().find(|m|m.id==id).map(|m|
-                format!("MONSTER #{}\nHP {:.0}%\nhunger {:.2}\naggression {:.2}\nposition {:.0}, {:.0}",m.id,m.health*100.0,m.hunger,m.aggression,m.position.x,m.position.y)
+                format!("MONSTER #{}\nHP {:.0}%  hunger {:.2}\nMASS {:.0}kg speed {:.2}\naggr {:.2} armor {:.2} intel {:.2}\nposition {:.0}, {:.0}",m.id,m.health*100.0,m.hunger,m.archetype.body_mass_kg,m.archetype.speed,m.archetype.aggression,m.archetype.armor,m.archetype.intelligence,m.position.x,m.position.y)
             ).unwrap_or_else(||"monster no longer exists".into()),
         };
     }
