@@ -17,6 +17,7 @@ use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::World
 #[derive(Component)] struct MonsterLabPanel;
 #[derive(Component,Clone,Copy)] struct PixelButton{ x:u8,y:u8 }
 #[derive(Component)] struct MonsterLabGrid;
+#[derive(Resource,Default)] struct LabUiState{built_side:u8,painting:bool,erase:bool}
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)] enum ToolCategory { Observe, Life, Nature, Disaster }
 impl GodTool { fn category(self)->ToolCategory { match self {
@@ -54,12 +55,13 @@ fn main() {
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.055,0.075,0.060)))
         .init_resource::<ViewerState>()
+        .init_resource::<LabUiState>()
         .add_plugins(DefaultPlugins.set(WindowPlugin{
             primary_window:Some(Window{title:"Autonomous Civilization — Sim Viewer".into(),..default()}),
             ..default()
         }))
         .add_systems(Startup,setup)
-        .add_systems(Update,(controls,god_button_interactions,pixel_editor_interactions,sync_monster_lab,tick_sim,sync_world,tool_preview,world_click,update_ui))
+        .add_systems(Update,(controls,god_button_interactions,rebuild_monster_grid,pixel_editor_interactions,sync_monster_lab,tick_sim,sync_world,tool_preview,world_click,update_ui))
         .run();
 }
 
@@ -91,17 +93,9 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
     commands.spawn((Text::new(""),TextFont::from_font_size(12.0),TextColor(Color::srgb(0.92,0.92,0.86)),
         Node{position_type:PositionType::Absolute,top:px(100),left:px(14),..default()},Visibility::Hidden,MonsterLabText));
     commands.spawn((Node{
-        position_type:PositionType::Absolute,top:px(92),left:px(18),width:px(360),height:px(430),
-        display:Display::Grid,grid_template_columns:RepeatedGridTrack::flex(16,1.0),
-        grid_template_rows:RepeatedGridTrack::flex(16,1.0),row_gap:px(1),column_gap:px(1),
-        padding:UiRect::all(px(8)),..default()
-    },BackgroundColor(Color::srgba(0.035,0.045,0.038,0.96)),Visibility::Hidden,MonsterLabPanel,MonsterLabGrid))
-    .with_children(|p|{
-        for y in 0..16u8 { for x in 0..16u8 {
-            p.spawn((Button,Node{width:percent(100),height:percent(100),..default()},
-                BackgroundColor(Color::srgb(0.09,0.10,0.09)),PixelButton{x,y}));
-        }}
-    });
+        position_type:PositionType::Absolute,top:px(92),left:px(18),width:px(430),height:px(430),
+        display:Display::Grid,row_gap:px(1),column_gap:px(1),padding:UiRect::all(px(8)),..default()
+    },BackgroundColor(Color::srgba(0.035,0.045,0.038,0.96)),Visibility::Hidden,MonsterLabPanel,MonsterLabGrid));
     commands.spawn((Sprite::from_color(Color::srgba(0.95,0.90,0.65,0.10),Vec2::splat(140.0)),Transform::from_xyz(0.0,0.0,0.4),Visibility::Hidden,ToolPreview));
     commands.spawn((Node{
         position_type:PositionType::Absolute,bottom:px(10),left:percent(14),right:percent(14),height:px(46),
@@ -134,25 +128,49 @@ fn god_button_interactions(
     }
 }
 
-fn pixel_editor_interactions(
-    mut q:Query<(&Interaction,&PixelButton,&mut BackgroundColor),(Changed<Interaction>,With<Button>)>,
-    mut state:ResMut<ViewerState>,
+fn rebuild_monster_grid(
+    mut commands:Commands,state:Res<ViewerState>,mut ui:ResMut<LabUiState>,
+    mut grid:Query<(Entity,&mut Node),With<MonsterLabGrid>>,
 ) {
     if !state.monster_lab{return;}
+    let side=state.monster_blueprint.skin.width;
+    if ui.built_side==side{return;}
+    let Ok((entity,mut node))=grid.single_mut() else{return;};
+    commands.entity(entity).despawn_related::<Children>();
+    node.grid_template_columns=RepeatedGridTrack::flex(side as u16,1.0);
+    node.grid_template_rows=RepeatedGridTrack::flex(side as u16,1.0);
+    commands.entity(entity).with_children(|p|{
+        for y in 0..side {for x in 0..side {
+            p.spawn((Button,Node{width:percent(100),height:percent(100),..default()},
+                BackgroundColor(Color::srgb(0.09,0.10,0.09)),PixelButton{x,y}));
+        }}
+    });
+    ui.built_side=side;
+}
+
+fn pixel_editor_interactions(
+    buttons:Res<ButtonInput<MouseButton>>,
+    mut q:Query<(&Interaction,&PixelButton,&mut BackgroundColor),With<Button>>,
+    mut state:ResMut<ViewerState>,mut ui:ResMut<LabUiState>,
+) {
+    if !state.monster_lab{return;}
+    if buttons.just_pressed(MouseButton::Left){ui.painting=true;ui.erase=false;}
+    if buttons.just_pressed(MouseButton::Right){ui.painting=true;ui.erase=true;}
+    if buttons.just_released(MouseButton::Left)||buttons.just_released(MouseButton::Right){ui.painting=false;}
     for (interaction,pixel,mut bg) in &mut q {
-        if *interaction==Interaction::Pressed {
-            let Some(i)=state.monster_blueprint.skin.index(pixel.x,pixel.y) else{continue;};
-            if state.monster_fill {let cell=PixelCell{filled:true,palette:state.monster_palette,emissive:state.monster_emissive};state.monster_blueprint.skin.flood_fill(pixel.x,pixel.y,cell);continue;}
-            let next=!state.monster_blueprint.skin.pixels[i].filled;
-            state.monster_blueprint.skin.pixels[i]=PixelCell{filled:next,palette:state.monster_palette,emissive:state.monster_emissive};
-            if state.monster_mirror {
-                let mx=state.monster_blueprint.skin.width-1-pixel.x;
-                if let Some(mi)=state.monster_blueprint.skin.index(mx,pixel.y) {
-                    state.monster_blueprint.skin.pixels[mi]=PixelCell{filled:next,palette:state.monster_palette,emissive:state.monster_emissive};
-                }
-            }
-            *bg=BackgroundColor(if next{Color::srgb(0.72,0.22,0.16)}else{Color::srgb(0.09,0.10,0.09)});
+        if *interaction!=Interaction::Hovered && *interaction!=Interaction::Pressed {continue;}
+        if !ui.painting && *interaction!=Interaction::Pressed {continue;}
+        if state.monster_fill && *interaction==Interaction::Pressed {
+            let cell=PixelCell{filled:!ui.erase,palette:state.monster_palette,emissive:state.monster_emissive};
+            state.monster_blueprint.skin.flood_fill(pixel.x,pixel.y,cell);continue;
         }
+        let cell=PixelCell{filled:!ui.erase,palette:state.monster_palette,emissive:state.monster_emissive};
+        if let Some(i)=state.monster_blueprint.skin.index(pixel.x,pixel.y){state.monster_blueprint.skin.pixels[i]=cell;}
+        if state.monster_mirror {
+            let mx=state.monster_blueprint.skin.width-1-pixel.x;
+            if let Some(mi)=state.monster_blueprint.skin.index(mx,pixel.y){state.monster_blueprint.skin.pixels[mi]=cell;}
+        }
+        *bg=BackgroundColor(if cell.filled{Color::srgb(0.72,0.22,0.16)}else{Color::srgb(0.09,0.10,0.09)});
     }
 }
 
