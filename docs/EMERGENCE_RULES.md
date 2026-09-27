@@ -1,25 +1,31 @@
 # Emergence rules
 
-A civilization may only gain a capability through a causal chain:
-problem encountered -> evidence/observation -> candidate design/process -> construction -> physical evaluation -> field use -> retained or rejected lineage.
+The simulation defines physics, constraints, perception, needs, generic action primitives and local affordances. It does not define a required response chain.
+
+A capability may emerge when residents independently perceive pressures/opportunities, choose actions, experiment, construct artifacts, observe consequences and retain or transmit useful knowledge. No particular step is mandatory and no particular solution is guaranteed.
 
 Forbidden shortcuts:
-- year threshold unlock
-- population threshold unlock
+- year or population threshold unlock
 - era enum unlock
+- scenario scripts such as monster -> wall or water -> raft
+- civilization-level personality class assigned by the developer
 - AI text response directly setting success
 - renderer/UI setting simulation capability
 - undiscovered remote resource silently entering inventory
 
 Variation sources:
-- world seed and geography
+- individual personality and needs
+- incomplete local perception
+- memories and learned action values
+- relationships, prestige, imitation and cultural norms
+- world seed, geography, climate and ecology
 - local resource composition/quality
-- climate and ecology
-- imperfect beliefs
-- individual/cultural risk tolerance
-- historical accidents and failures
+- historical accidents and failed experiments
 - captured/copied designs
-- mutation/recombination
+- design mutation/recombination
 - different selection pressures
+- deterministic seeded idiosyncratic noise
 
-The desired outcome is not maximum randomness. Outcomes must be surprising but causally reconstructable from the world's history.
+Culture is emergent. Repeated successful/visible/prestigious behavior changes local norms; norms influence conforming residents, but never force a response. Different subgroups of one civilization may diverge.
+
+The desired outcome is not maximum randomness. Outcomes must be surprising but causally reconstructable from resident decisions and world history.
