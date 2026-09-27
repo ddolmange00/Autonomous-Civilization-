@@ -1,3 +1,6 @@
+pub mod households;
+pub mod knowledge;
+pub mod life_history;
 pub mod pixel_animation;
 pub mod blueprint_library;
 pub mod blueprints;
