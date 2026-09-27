@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::blueprints::{AnchorKind,MonsterBlueprint};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MotionState { Idle, Walk, Run, Attack, Hit, Death }
@@ -42,6 +43,22 @@ pub fn pixel_offset(x:u8,y:u8,width:u8,height:u8,state:MotionState,phase:f32)->(
         MotionState::Hit=>(-0.2*(1.0-ny.abs()),0.0),
         _=>(0.0,0.0),
     }
+}
+
+pub fn anchored_pixel_offset(blueprint:&MonsterBlueprint,x:u8,y:u8,state:MotionState,phase:f32)->(f32,f32) {
+    let mut out=pixel_offset(x,y,blueprint.skin.width,blueprint.skin.height,state,phase);
+    let p=phase*std::f32::consts::TAU;
+    for a in &blueprint.anchors {
+        let dx=x as f32-a.x as f32;let dy=y as f32-a.y as f32;let d2=dx*dx+dy*dy;
+        if d2>9.0 {continue;} let influence=(1.0-d2/10.0).max(0.0);
+        match (a.kind,state) {
+            (AnchorKind::Foot,MotionState::Walk)|(AnchorKind::Foot,MotionState::Run)=>{out.0+=p.sin()*0.8*influence;out.1+=p.cos().min(0.0).abs()*0.25*influence;}
+            (AnchorKind::Tail,MotionState::Idle)|(AnchorKind::Tail,MotionState::Walk)|(AnchorKind::Tail,MotionState::Run)=>{out.0+=(p*1.4).sin()*0.65*influence;}
+            (AnchorKind::Head,MotionState::Attack)=>{out.0+=p.sin().max(0.0)*0.65*influence;}
+            (AnchorKind::Attack,MotionState::Attack)=>{out.0+=p.sin().max(0.0)*1.25*influence;}
+            _=>{}
+        }
+    } out
 }
 
 #[cfg(test)]
