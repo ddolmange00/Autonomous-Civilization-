@@ -1,3 +1,5 @@
+pub mod settlement_identity;
+pub mod specialization;
 pub mod development;
 pub mod social_affordances;
 pub mod settlement_detection;
