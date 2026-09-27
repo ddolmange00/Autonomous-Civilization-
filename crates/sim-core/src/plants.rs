@@ -19,7 +19,7 @@ pub fn step_day(mut p:PlantPatch,t:PlantTraits,temp_c:f32,available_water:f32,li
     let wf=(available_water/t.water_demand.max(1e-5)).clamp(0.,1.);
     let lf=(light/t.light_demand.max(1e-5)).clamp(0.,1.);
     let limiting=tf.min(wf).min(lf);
-    p.biomass_kg_m2=(p.biomass_kg_m2+t.max_growth_per_day*limiting*(1.0-p.maturity*.35)).max(0.);
+    p.biomass_kg_m2=(p.biomass_kg_m2+t.max_growth_per_day*limiting*(1.0-p.maturity*0.35)).max(0.);
     p.maturity=(p.maturity+0.003*limiting).clamp(0.,1.);
     p
 }
