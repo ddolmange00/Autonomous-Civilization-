@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/sim-core", "crates/scenario-runner"]
+members = ["crates/sim-core", "crates/scenario-runner", "crates/sim-viewer"]
 
 [workspace.package]
 edition = "2024"
@@ -11,3 +11,4 @@ version = "0.1.0"
 serde = { version = "1", features = ["derive"] }
 rand = "0.9"
 rand_chacha = "0.9"
+bevy = "0.19.1"
