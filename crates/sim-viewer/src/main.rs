@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, sandbox::Sandbox};
+use sim_core::{affordances::FeatureKind, awareness::SituationKind, sandbox::Sandbox};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
@@ -9,7 +9,7 @@ use sim_core::{affordances::FeatureKind, sandbox::Sandbox};
 #[derive(Component)] struct InspectorText;
 
 #[derive(Clone, Copy, Debug)]
-enum Selected { Resident(u64), Monster(u64) }
+enum Selected { Resident(u64), Monster(u64), Settlement }
 
 #[derive(Resource)]
 struct ViewerState {
@@ -68,6 +68,7 @@ fn controls(
     if keys.just_pressed(KeyCode::Space){state.paused=!state.paused;}
     if keys.just_pressed(KeyCode::F3){state.debug=!state.debug;}
     if keys.just_pressed(KeyCode::KeyM){state.sim.spawn_monster();}
+    if keys.just_pressed(KeyCode::KeyV){state.selected=Some(Selected::Settlement);}
     if keys.just_pressed(KeyCode::KeyR){
         state.seed=state.seed.wrapping_add(1); state.sim=Sandbox::new(state.seed); state.selected=None;
         for e in &monsters { commands.entity(e).despawn(); }
@@ -150,7 +151,7 @@ fn update_ui(
 ) {
     if let Ok(mut t)=hud.single_mut() {
         let alive=state.sim.residents.iter().filter(|r|r.health>0.0).count();
-        t.0=format!("SEED {}   YEAR {:.2}   RESIDENTS {}/{}   MONSTERS {}\nSPEED x{} {}   [1-5 speed] [Space pause] [M monster] [R new seed] [F3 debug]\n[WASD pan] [+/- zoom] [Click resident/monster]",
+        t.0=format!("SEED {}   YEAR {:.2}   RESIDENTS {}/{}   MONSTERS {}\nSPEED x{} {}   [1-5 speed] [Space pause] [M monster] [R new seed] [F3 debug]\n[WASD pan] [+/- zoom] [Click entity] [V settlement pulse]",
             state.seed,state.sim.year,alive,state.sim.residents.len(),state.sim.monsters.iter().filter(|m|m.health>0.0).count(),
             state.speed as u32,if state.paused{"PAUSED"}else{""});
     }
