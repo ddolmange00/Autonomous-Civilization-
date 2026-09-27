@@ -11,6 +11,7 @@ pub enum LifeStage { Infant, Child, Adolescent, Adult, Elder }
 pub struct LifeHistory {
     pub birth_year:f64,
     pub sex:Sex,
+    pub last_birth_year:Option<f64>,
     pub biological:HeritableTraits,
     pub kinship:Kinship,
     pub social:SocialMemory,
