@@ -58,7 +58,7 @@ fn main() {
             ..default()
         }))
         .add_systems(Startup,setup)
-        .add_systems(Update,(controls,god_button_interactions,pixel_editor_interactions,tick_sim,sync_world,tool_preview,world_click,update_ui))
+        .add_systems(Update,(controls,god_button_interactions,pixel_editor_interactions,sync_monster_lab,tick_sim,sync_world,tool_preview,world_click,update_ui))
         .run();
 }
 
@@ -150,6 +150,22 @@ fn pixel_editor_interactions(
                 }
             }
             *bg=BackgroundColor(if next{Color::srgb(0.72,0.22,0.16)}else{Color::srgb(0.09,0.10,0.09)});
+        }
+    }
+}
+
+fn sync_monster_lab(
+    state:Res<ViewerState>,
+    mut panel:Query<&mut Visibility,With<MonsterLabPanel>>,
+    mut pixels:Query<(&PixelButton,&mut BackgroundColor)>,
+) {
+    if let Ok(mut v)=panel.single_mut(){*v=if state.monster_lab{Visibility::Visible}else{Visibility::Hidden};}
+    if state.monster_lab {
+        for (p,mut bg) in &mut pixels {
+            if let Some(i)=state.monster_blueprint.skin.index(p.x,p.y) {
+                let cell=state.monster_blueprint.skin.pixels[i];
+                *bg=BackgroundColor(if cell.filled{if cell.emissive{Color::srgb(0.95,0.72,0.18)}else{Color::srgb(0.72,0.22,0.16)}}else{Color::srgb(0.09,0.10,0.09)});
+            }
         }
     }
 }
@@ -368,7 +384,7 @@ fn update_ui(
         if state.monster_lab {
             let skin=&state.monster_blueprint.skin;let mut grid=String::new();
             for y in 0..skin.height{for x in 0..skin.width{let p=skin.pixels[skin.index(x,y).unwrap()];grid.push(if p.filled{'#'}else{'·'});}grid.push('\n');}
-            t.0=format!("MONSTER LAB — {}x{}  [L close] [C clear] [R seed silhouette]\n{}\ncoverage {:.0}% · scale {:.1}\nMASS {:.0}kg SPEED {:.2} AGGR {:.2}\n(pixel mouse editor next)",skin.width,skin.height,grid,skin.filled_fraction()*100.0,state.monster_blueprint.scale,state.monster.body_mass_kg,state.monster.speed,state.monster.aggression);
+            t.0=format!("MONSTER LAB — {}x{}  [L close] [C clear] [R seed silhouette] [; mirror {}]\n{}\ncoverage {:.0}% · scale {:.1}\nMASS {:.0}kg SPEED {:.2} AGGR {:.2}\n(pixel mouse editor next)",skin.width,skin.height,if state.monster_mirror{"ON"}else{"OFF"},grid,skin.filled_fraction()*100.0,state.monster_blueprint.scale,state.monster.body_mass_kg,state.monster.speed,state.monster.aggression);
         }
     }
     if let Ok(mut t)=inspector.single_mut() {
