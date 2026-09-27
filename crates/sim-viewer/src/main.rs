@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, species::{AnimalArchetype,MonsterArchetype}, world::Position};
+use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprints::{MonsterBlueprint,PixelCell,PixelSkin}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
@@ -13,6 +13,7 @@ use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::World
 #[derive(Component)] struct ToolPreview;
 #[derive(Component,Clone,Copy)] struct GodButton(GodTool);
 #[derive(Component)] struct ToolContextText;
+#[derive(Component)] struct MonsterLabText;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)] enum ToolCategory { Observe, Life, Nature, Disaster }
 impl GodTool { fn category(self)->ToolCategory { match self {
@@ -38,9 +39,11 @@ struct ViewerState {
     sim:Sandbox, seed:u64, speed:f32, paused:bool, debug:bool, selected:Option<Selected>,
     tool:GodTool, tool_radius:f32, tool_intensity:f32,
     animal:AnimalArchetype, monster:MonsterArchetype,
+    monster_lab:bool, monster_blueprint:MonsterBlueprint,
 }
 impl Default for ViewerState {
-    fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None,tool:GodTool::Inspect,tool_radius:70.0,tool_intensity:0.8,animal:AnimalArchetype::default(),monster:MonsterArchetype::default()} }
+    fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None,tool:GodTool::Inspect,tool_radius:70.0,tool_intensity:0.8,animal:AnimalArchetype::default(),monster:MonsterArchetype::default(),
+            monster_lab:false,monster_blueprint:MonsterBlueprint{id:1,name:"Custom".into(),skin:PixelSkin::new(16,16),archetype:MonsterArchetype::default(),scale:1.0}} }
 }
 
 fn main() {
@@ -81,6 +84,8 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
         Node{position_type:PositionType::Absolute,bottom:px(62),left:percent(20),..default()},ToolText));
     commands.spawn((Text::new(""),TextFont::from_font_size(13.0),TextColor(Color::srgb(0.84,0.86,0.78)),
         Node{position_type:PositionType::Absolute,bottom:px(64),right:px(14),..default()},ToolContextText));
+    commands.spawn((Text::new(""),TextFont::from_font_size(12.0),TextColor(Color::srgb(0.92,0.92,0.86)),
+        Node{position_type:PositionType::Absolute,top:px(100),left:px(14),..default()},Visibility::Hidden,MonsterLabText));
     commands.spawn((Sprite::from_color(Color::srgba(0.95,0.90,0.65,0.10),Vec2::splat(140.0)),Transform::from_xyz(0.0,0.0,0.4),Visibility::Hidden,ToolPreview));
     commands.spawn((Node{
         position_type:PositionType::Absolute,bottom:px(10),left:percent(14),right:percent(14),height:px(46),
@@ -146,6 +151,11 @@ fn controls(
     if keys.just_pressed(KeyCode::KeyY){state.monster.speed=(state.monster.speed+0.1).min(2.0);}
     if keys.just_pressed(KeyCode::KeyB){state.monster.aggression=(state.monster.aggression-0.1).max(0.0);}
     if keys.just_pressed(KeyCode::KeyP){state.monster.aggression=(state.monster.aggression+0.1).min(1.0);}
+    if keys.just_pressed(KeyCode::KeyL){state.monster_lab=!state.monster_lab;state.monster_blueprint.archetype=state.monster;}
+    if state.monster_lab {
+        if keys.just_pressed(KeyCode::KeyC){for p in &mut state.monster_blueprint.skin.pixels{*p=PixelCell::default();}}
+        if keys.just_pressed(KeyCode::KeyR){for y in 0..state.monster_blueprint.skin.height{for x in 0..state.monster_blueprint.skin.width{let on=((x as u64*17+y as u64*31+state.seed)%7)<3;if on{state.monster_blueprint.skin.set(x,y,PixelCell{filled:true,palette:1,emissive:false});}}}}
+    }
     if keys.just_pressed(KeyCode::KeyV){state.selected=Some(Selected::Settlement);}
     if keys.just_pressed(KeyCode::KeyR){
         state.seed=state.seed.wrapping_add(1); state.sim=Sandbox::new(state.seed); state.selected=None;
@@ -298,6 +308,7 @@ fn update_ui(
     mut inspector:Query<&mut Text,(With<InspectorText>,Without<HudText>)>,
     mut tool:Query<&mut Text,(With<ToolText>,Without<HudText>,Without<InspectorText>)>,
     mut context:Query<&mut Text,(With<ToolContextText>,Without<ToolText>,Without<HudText>,Without<InspectorText>)>,
+    mut lab:Query<(&mut Text,&mut Visibility),(With<MonsterLabText>,Without<ToolContextText>,Without<ToolText>,Without<HudText>,Without<InspectorText>)>,
 ) {
     if let Ok(mut t)=hud.single_mut() {
         let alive=state.sim.residents.iter().filter(|r|r.health>0.0).count();
@@ -314,6 +325,14 @@ fn update_ui(
         } else if state.tool==GodTool::Animal {
             format!("{} / {}\n{}\nMASS {:.0}kg  SPEED {:.2}\nFEAR {:.2}  AGGR {:.2}",cat,state.tool.label(),hint,state.animal.body_mass_kg,state.animal.speed,state.animal.fear,state.animal.aggression)
         } else {format!("{} / {}\n{}\nradius {:.0} · power {:.1}",cat,state.tool.label(),hint,state.tool_radius,state.tool_intensity)};
+    }
+    if let Ok((mut t,mut vis))=lab.single_mut(){
+        *vis=if state.monster_lab{Visibility::Visible}else{Visibility::Hidden};
+        if state.monster_lab {
+            let skin=&state.monster_blueprint.skin;let mut grid=String::new();
+            for y in 0..skin.height{for x in 0..skin.width{let p=skin.pixels[skin.index(x,y).unwrap()];grid.push(if p.filled{'#'}else{'·'});}grid.push('\n');}
+            t.0=format!("MONSTER LAB — {}x{}  [L close] [C clear] [R seed silhouette]\n{}\ncoverage {:.0}% · scale {:.1}\nMASS {:.0}kg SPEED {:.2} AGGR {:.2}\n(pixel mouse editor next)",skin.width,skin.height,grid,skin.filled_fraction()*100.0,state.monster_blueprint.scale,state.monster.body_mass_kg,state.monster.speed,state.monster.aggression);
+        }
     }
     if let Ok(mut t)=inspector.single_mut() {
         t.0=match state.selected {
