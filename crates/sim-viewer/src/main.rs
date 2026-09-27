@@ -280,8 +280,22 @@ fn sync_world(
     let existing:Vec<u64>=monsters.iter().map(|(_,m,_,_)|m.0).collect();
     for m in &state.sim.monsters {
         if !existing.contains(&m.id) {
-            commands.spawn((Sprite::from_color(Color::srgb(0.72,0.16,0.13),Vec2::splat(15.0)),
-                Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id)));
+            if let Some(skin)=&m.skin {
+                let scale=(18.0/skin.width.max(skin.height) as f32).max(0.5);
+                commands.spawn((Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id)))
+                    .with_children(|p|{
+                        for y in 0..skin.height {for x in 0..skin.width {
+                            let cell=skin.pixels[skin.index(x,y).unwrap()]; if !cell.filled{continue;}
+                            let px=(x as f32-(skin.width as f32-1.0)*0.5)*scale;
+                            let py=((skin.height as f32-1.0)*0.5-y as f32)*scale;
+                            p.spawn((Sprite::from_color(if cell.emissive{Color::srgb(0.95,0.72,0.18)}else{Color::srgb(0.72,0.16,0.13)},Vec2::splat(scale)),
+                                Transform::from_xyz(px,py,0.0)));
+                        }}
+                    });
+            } else {
+                commands.spawn((Sprite::from_color(Color::srgb(0.72,0.16,0.13),Vec2::splat(15.0)),
+                    Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id)));
+            }
         }
     }
     for (e,tag,mut t,mut sprite) in &mut monsters {
@@ -338,7 +352,7 @@ fn world_click(
         }
         GodTool::Resident=>state.sim.spawn_resident_at(p),
         GodTool::Animal=>state.sim.spawn_animal_with(p,state.animal),
-        GodTool::Monster=>state.sim.spawn_monster_with(p,state.monster),
+        GodTool::Monster=>state.sim.spawn_monster_with(p,state.monster,Some(state.monster_blueprint.skin.clone())),
         GodTool::Vegetation=>state.sim.grow_vegetation_at(p,(8.0+state.tool_intensity*12.0) as u32),
         GodTool::Mineral=>state.sim.deposit_minerals_at(p,(4.0+state.tool_intensity*7.0) as u32),
         GodTool::Rain|GodTool::Drought|GodTool::Fire|GodTool::Flood|GodTool::Earthquake=>{
