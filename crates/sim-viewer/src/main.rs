@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{AnchorKind,MonsterBlueprint,PixelAnchor,PixelCell,PixelSkin}, pixel_animation::{anchored_pixel_offset,body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, settlement_detection::detect_settlements, world::Position};
+use sim_core::{causal_log::CausalNode,affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{AnchorKind,MonsterBlueprint,PixelAnchor,PixelCell,PixelSkin}, pixel_animation::{anchored_pixel_offset,body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, settlement_detection::detect_settlements, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
