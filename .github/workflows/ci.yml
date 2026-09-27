@@ -10,12 +10,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Core and scenario tests
+        run: cargo test -p sim-core -p scenario-runner --all-targets
+
+  viewer:
+    needs: core
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Bevy Linux dependencies
         run: sudo apt-get update && sudo apt-get install -y libwayland-dev libxkbcommon-dev pkg-config
-      - name: Cargo test
-        run: cargo test --workspace --all-targets
+      - name: Viewer compile check
+        run: cargo check -p sim-viewer

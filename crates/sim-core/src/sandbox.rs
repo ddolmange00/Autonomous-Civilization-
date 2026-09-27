@@ -14,13 +14,13 @@ use crate::{
     social_dynamics::{spend_time,partnership_affinity},
     generation::{annual_mortality_risk,conception_propensity,ReproductionContext},
     social_affordances::{generate_social,SocialTarget},
-    development::{filter_affordances,mobility_factor},
+    development::{capability_factor,filter_affordances,mobility_factor},
     demography::{HeritableTraits,inherit},
     households::Household,
     life_history::inherit_personality,
     specialization::PracticeProfile,
     settlement_detection::detect_settlements,
-    settlement_identity::{cluster_member_ids,nearest_identity,SettlementIdentity},
+    settlement_identity::{cluster_member_ids,SettlementIdentity},
     culture::CulturalField,
     causal_log::{CausalLog, CausalNode},
     world::Position,
@@ -234,7 +234,15 @@ impl Sandbox {
                         danger:(m.archetype.aggression*m.health*(0.5+m.archetype.body_mass_kg.sqrt()/60.0)).clamp(0.0,1.5),food_hint:0.0,material_hint:0.25,uncertainty:(d/140.0).clamp(0.05,0.75)});
                 }
             }
-            let mut affordances=generate(&perceived,LocalCapabilities{reach_m:12.0,cutting:0.05,digging:0.04,carrying:0.2,heat_tolerance:0.0});
+            let stage=r.life.stage(self.year);
+            let capability=capability_factor(stage);
+            let mut affordances=generate(&perceived,LocalCapabilities{
+                reach_m:3.0+9.0*capability,
+                cutting:0.05*capability,
+                digging:0.04*capability,
+                carrying:0.2*capability,
+                heat_tolerance:0.0,
+            });
             let social_targets:Vec<_>=snapshot_residents.iter().filter(|o|o.id!=r.id&&o.health>0.0&&dist(r.position,o.position)<=28.0).map(|o|SocialTarget{
                 id:o.id,distance_m:dist(r.position,o.position),stage:o.life.stage(self.year),health:o.health,hunger:o.mind.needs.hunger,safety_need:o.mind.needs.safety,
                 relation:r.life.social.relations.get(&o.id).copied().unwrap_or_default(),
@@ -243,7 +251,7 @@ impl Sandbox {
             if let Some(village)=self.settlements.iter().filter(|s|!s.members.is_empty()).find(|s|s.members.contains(&r.id)) {
                 for a in &mut affordances { a.local_norm=village.culture.norm(a.action)*0.35; }
             }
-            filter_affordances(r.life.stage(self.year),&mut affordances);
+            filter_affordances(stage,&mut affordances);
             if affordances.is_empty() { continue; }
             let mut scored:Vec<(usize,f32)>=affordances.iter().enumerate().map(|(i,a)|{
                 let mem=r.memory.recalled_value(a.action,self.year);
@@ -494,9 +502,8 @@ impl Sandbox {
             let traits=inherit_personality(mother.mind.traits,father.mind.traits,variation10);
             let household=mother.life.kinship.household.or(father.life.kinship.household);
             let position=Position{x:(mother.position.x+father.position.x)*0.5+signed(s,21)*2.0,y:(mother.position.y+father.position.y)*0.5+signed(s,22)*2.0};
-            let mut knowledge=KnowledgeStore::default();
-            mother.knowledge.transmit_to(&mut knowledge,0.35,signed(s,23)*0.08);
-            father.knowledge.transmit_to(&mut knowledge,0.35,signed(s,24)*0.08);
+            // Newborns do not inherit cultural knowledge. It is acquired later through observation and teaching.
+            let knowledge=KnowledgeStore::default();
             self.residents.push(Resident{id,position,mind:AgentMind{traits,needs:Needs{hunger:0.15,safety:0.35,rest:0.35,belonging:0.65,status:0.0,curiosity:0.35,care:0.0},..Default::default()},
                 memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),
                 life:LifeHistory{birth_year:year,sex:if unit(s,25)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological,
@@ -518,6 +525,10 @@ impl Sandbox {
                 self.causal_log.push(year,CausalNode::Outcome{resident_id:Some(r.id),label:format!("died at age {:.1}",r.life.age(year)),value:-1.0});
             }
         }
+
+        // Remove dead residents from active household resource pressure while preserving their kinship history.
+        let living_ids:std::collections::BTreeSet<u64>=self.residents.iter().filter(|r|r.health>0.0).map(|r|r.id).collect();
+        for h in &mut self.households { h.members.retain(|id|living_ids.contains(id)); }
 
         // Household food use and optional migration. Pressure creates opportunity, not a forced response.
         for h in &mut self.households {

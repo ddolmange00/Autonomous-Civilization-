@@ -18,9 +18,17 @@ pub fn mobility_factor(stage:LifeStage)->f32 {
     match stage {LifeStage::Infant=>0.10,LifeStage::Child=>0.65,LifeStage::Adolescent=>0.95,LifeStage::Adult=>1.0,LifeStage::Elder=>0.72}
 }
 
+pub fn capability_factor(stage:LifeStage)->f32 {
+    match stage {LifeStage::Infant=>0.05,LifeStage::Child=>0.45,LifeStage::Adolescent=>0.85,LifeStage::Adult=>1.0,LifeStage::Elder=>0.68}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test] fn infants_cannot_attack(){assert!(!action_allowed(LifeStage::Infant,ActionPrimitive::Attack));}
     #[test] fn adults_can_experiment(){assert!(action_allowed(LifeStage::Adult,ActionPrimitive::Experiment));}
+    #[test] fn physical_capability_changes_with_development(){
+        assert!(capability_factor(LifeStage::Infant)<capability_factor(LifeStage::Child));
+        assert!(capability_factor(LifeStage::Child)<capability_factor(LifeStage::Adult));
+    }
 }
