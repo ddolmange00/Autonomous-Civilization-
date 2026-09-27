@@ -240,6 +240,9 @@ impl Sandbox {
                 relation:r.life.social.relations.get(&o.id).copied().unwrap_or_default(),
             }).collect();
             affordances.extend(generate_social(&social_targets));
+            if let Some(village)=self.settlements.iter().filter(|s|!s.members.is_empty()).find(|s|s.members.contains(&r.id)) {
+                for a in &mut affordances { a.local_norm=village.culture.norm(a.action)*0.35; }
+            }
             filter_affordances(r.life.stage(self.year),&mut affordances);
             if affordances.is_empty() { continue; }
             let mut scored:Vec<(usize,f32)>=affordances.iter().enumerate().map(|(i,a)|{
