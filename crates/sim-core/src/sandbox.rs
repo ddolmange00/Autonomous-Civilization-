@@ -353,7 +353,7 @@ impl Sandbox {
             match (a.life.kinship.household,b.life.kinship.household) {
                 (None,None)=>{
                     let hid=self.next_id;self.next_id+=1;
-                    self.households.push(Household{id:hid,members:vec![a.id,b.id],home:Position{x:(a.position.x+b.position.x)*0.5,y:(a.position.y+b.position.y)*0.5},stored_food:80.0,shared_material:0.0,cohesion:0.55});
+                    self.households.push(Household{id:hid,members:vec![a.id,b.id],home:Position{x:(a.position.x+b.position.x)*0.5,y:(a.position.y+b.position.y)*0.5},stored_food:80.0,shared_material:0.0,cohesion:0.55,migration_goal:None});
                     a.life.kinship.household=Some(hid);b.life.kinship.household=Some(hid);
                 }
                 (Some(h),None)=>{b.life.kinship.household=Some(h);if let Some(hh)=self.households.iter_mut().find(|x|x.id==h){if !hh.members.contains(&b.id){hh.members.push(b.id);}}},
