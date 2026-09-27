@@ -468,6 +468,27 @@ fn update_ui(
             Some(Selected::Monster(id))=>state.sim.monsters.iter().find(|m|m.id==id).map(|m|
                 format!("MONSTER #{}\nHP {:.0}%  hunger {:.2}\nMASS {:.0}kg speed {:.2}\naggr {:.2} armor {:.2} intel {:.2}\nposition {:.0}, {:.0}",m.id,m.health*100.0,m.hunger,m.archetype.body_mass_kg,m.archetype.speed,m.archetype.aggression,m.archetype.armor,m.archetype.intelligence,m.position.x,m.position.y)
             ).unwrap_or_else(||"monster no longer exists".into()),
+            Some(Selected::Settlement)=>{
+                let alive=state.sim.residents.iter().filter(|r|r.health>0.0).count();
+                let mut s=format!("SETTLEMENT PULSE\nPopulation {}  Households {}  Villages {}\n\n",alive,state.sim.households.len(),state.sim.settlements.iter().filter(|x|!x.members.is_empty()).count());
+                for village in state.sim.settlements.iter().filter(|x|!x.members.is_empty()).take(6) {
+                    let p=village.profile();
+                    s.push_str(&format!("#{}  founded Y{:.1}  pop {}\nfood {:.0} material {:.0} knowledge {}\n",village.id,village.founded_year,village.members.len(),village.shared_food,village.shared_material,village.knowledge_items));
+                    s.push_str(&format!("culture: fight {:+.2} avoid {:+.2} experiment {:+.2} cooperate {:+.2} build {:+.2}\n",p.confrontation,p.avoidance,p.experimentation,p.cooperation,p.construction));
+                    let specs=village.top_specializations(4);
+                    if !specs.is_empty(){s.push_str("skills: ");for (a,x) in specs{s.push_str(&format!("{:?} {:.2}  ",a,x));}s.push('\n');}
+                    s.push('\n');
+                }
+                s.push_str("Recent society events\n");
+                let mut shown=0;
+                for (year,node) in state.sim.causal_log.nodes.iter().rev() {
+                    if shown>=8{break;}
+                    if let CausalNode::Outcome{resident_id,label,..}=node {
+                        s.push_str(&format!("Y{:.1} {}{}\n",year,resident_id.map(|id|format!("#{} ",id)).unwrap_or_default(),label));shown+=1;
+                    }
+                }
+                s
+            },
         };
     }
 }
