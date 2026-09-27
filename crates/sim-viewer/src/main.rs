@@ -83,7 +83,7 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
     }
     for r in &state.sim.residents {
         commands.spawn((Sprite::from_color(Color::srgb(0.88,0.76,0.48),Vec2::new(7.0,10.0)),
-            Transform::from_xyz(r.position.x,r.position.y,1.0),ResidentSprite(r.id),WorldDynamic)));
+            Transform::from_xyz(r.position.x,r.position.y,1.0),ResidentSprite(r.id),WorldDynamic));
     }
     commands.spawn((Text::new(""),TextFont::from_font_size(15.0),TextColor(Color::WHITE),
         Node{position_type:PositionType::Absolute,top:px(10),left:px(12),..default()},HudText));
