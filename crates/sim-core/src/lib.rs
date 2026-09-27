@@ -1,3 +1,6 @@
+pub mod perception;
+pub mod memory;
+pub mod guidance;
 pub mod structures;
 pub mod soil;
 pub mod provenance;
