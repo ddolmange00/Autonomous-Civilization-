@@ -18,6 +18,10 @@ use crate::{
     demography::{HeritableTraits,inherit},
     households::Household,
     life_history::inherit_personality,
+    specialization::PracticeProfile,
+    settlement_detection::detect_settlements,
+    settlement_identity::{cluster_member_ids,nearest_identity,SettlementIdentity},
+    culture::CulturalField,
     causal_log::{CausalLog, CausalNode},
     world::Position,
 };
@@ -29,7 +33,7 @@ pub struct ActionScore { pub action: ActionPrimitive, pub score: f32 }
 pub struct Resident {
     pub id:u64, pub position:Position, pub mind:AgentMind, pub memory:EpisodicMemory,
     pub health:f32, pub current_action:ActionPrimitive, pub top_scores:Vec<ActionScore>, pub awareness:Awareness,
-    pub life:LifeHistory, pub knowledge:KnowledgeStore,
+    pub life:LifeHistory, pub knowledge:KnowledgeStore, pub practice:PracticeProfile,
 }
 
 #[derive(Clone, Debug)]
@@ -50,7 +54,7 @@ pub struct SandboxFeature {
 #[derive(Clone, Debug)]
 pub struct Sandbox {
     pub seed:u64, pub year:f64, pub residents:Vec<Resident>, pub animals:Vec<SandboxAnimal>, pub monsters:Vec<SandboxMonster>,
-    pub features:Vec<SandboxFeature>, pub households:Vec<Household>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
+    pub features:Vec<SandboxFeature>, pub households:Vec<Household>, pub settlements:Vec<SettlementIdentity>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
 }
 
 fn unit(seed:u64, stream:u64)->f32 {
@@ -101,7 +105,7 @@ impl Sandbox {
             residents.push(Resident{
                 id:i+1, position:Position{x:-120.0+signed(seed,i*20+13)*55.0,y:signed(seed,i*20+14)*90.0},
                 mind,memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,
-                current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:-18.0-unit(seed,i*20+15) as f64*28.0,sex:if unit(seed,i*20+22)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological:HeritableTraits{stature:unit(seed,i*20+16),body_mass:unit(seed,i*20+17),cold_tolerance:unit(seed,i*20+18),heat_tolerance:unit(seed,i*20+19),pigmentation:unit(seed,i*20+20),disease_resistance:unit(seed,i*20+21)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),
+                current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:-18.0-unit(seed,i*20+15) as f64*28.0,sex:if unit(seed,i*20+22)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological:HeritableTraits{stature:unit(seed,i*20+16),body_mass:unit(seed,i*20+17),cold_tolerance:unit(seed,i*20+18),heat_tolerance:unit(seed,i*20+19),pigmentation:unit(seed,i*20+20),disease_resistance:unit(seed,i*20+21)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),practice:PracticeProfile::default(),
             });
         }
         let mut features=Vec::new(); let mut id=10_000u64;
@@ -119,7 +123,7 @@ impl Sandbox {
             features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,
                 position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0}); id+=1;
         }
-        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
+        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
     }
 
     pub fn spawn_resident_at(&mut self, position:Position) {
@@ -133,7 +137,7 @@ impl Sandbox {
             ..Default::default()
         };
         self.residents.push(Resident{id,position,mind,memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,
-            current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:self.year-18.0-unit(s,11) as f64*22.0,sex:if unit(s,18)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological:HeritableTraits{stature:unit(s,12),body_mass:unit(s,13),cold_tolerance:unit(s,14),heat_tolerance:unit(s,15),pigmentation:unit(s,16),disease_resistance:unit(s,17)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),});
+            current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:self.year-18.0-unit(s,11) as f64*22.0,sex:if unit(s,18)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological:HeritableTraits{stature:unit(s,12),body_mass:unit(s,13),cold_tolerance:unit(s,14),heat_tolerance:unit(s,15),pigmentation:unit(s,16),disease_resistance:unit(s,17)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),practice:PracticeProfile::default(),});
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Resident spawned".into()});
     }
     pub fn spawn_animal_at(&mut self, position:Position) { self.spawn_animal_with(position,AnimalArchetype::default()); }
@@ -267,6 +271,7 @@ impl Sandbox {
             }
             let value=if chosen.action==ActionPrimitive::Avoid {chosen.expected.safety} else {chosen.expected.food+chosen.expected.knowledge+chosen.expected.status-chosen.expected.physical_risk};
             r.mind.learn_action(chosen.action,value,0.04);
+            r.practice.practice(chosen.action,value,days,self.year);
             if matches!(chosen.action,ActionPrimitive::Observe|ActionPrimitive::Experiment|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Dig) {
                 r.knowledge.learn(format!("action::{:?}",chosen.action),value,0.18+chosen.expected.knowledge*0.5);
             }
@@ -366,6 +371,7 @@ impl Sandbox {
             }
         }
         self.step_social_generation(days);
+        self.update_settlement_identities();
         for r in &mut self.residents {
             if r.current_action==ActionPrimitive::Attack {
                 for m in &mut self.monsters {
@@ -481,7 +487,7 @@ impl Sandbox {
             self.residents.push(Resident{id,position,mind:AgentMind{traits,needs:Needs{hunger:0.15,safety:0.35,rest:0.35,belonging:0.65,status:0.0,curiosity:0.35,care:0.0},..Default::default()},
                 memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),
                 life:LifeHistory{birth_year:year,sex:if unit(s,25)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological,
-                    kinship:Kinship{parents:vec![mother.id,father.id],children:vec![],partners:vec![],household},social:SocialMemory::default()},knowledge});
+                    kinship:Kinship{parents:vec![mother.id,father.id],children:vec![],partners:vec![],household},social:SocialMemory::default()},knowledge,practice:PracticeProfile::default()});
             if let Some(m)=self.residents.get_mut(mi){m.life.last_birth_year=Some(year);m.life.kinship.children.push(id);}
             if let Some(f)=self.residents.get_mut(fi){f.life.kinship.children.push(id);}
             if let Some(h)=household.and_then(|h|self.households.iter_mut().find(|x|x.id==h)){h.members.push(id);}
@@ -545,6 +551,54 @@ impl Sandbox {
                     self.causal_log.push(year,CausalNode::Outcome{resident_id:None,label:format!("household {} settled new site",hid),value:0.6});
                 }
             }
+        }
+    }
+
+    fn update_settlement_identities(&mut self) {
+        use std::collections::{BTreeMap,BTreeSet};
+        let alive:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0).collect();
+        let positions:Vec<Position>=alive.iter().map(|r|r.position).collect();
+        let resident_ids:Vec<u64>=alive.iter().map(|r|r.id).collect();
+        let clusters=detect_settlements(&positions,45.0,3);
+        let mut seen:BTreeSet<u64>=BTreeSet::new();
+
+        for cluster in clusters {
+            let ids=cluster_member_ids(&cluster,&resident_ids);
+            let idx=nearest_identity(cluster.center,&self.settlements,90.0);
+            let si=if let Some(i)=idx {i} else {
+                let id=self.next_id; self.next_id+=1;
+                self.settlements.push(SettlementIdentity{
+                    id,center:cluster.center,founded_year:self.year,last_seen_year:self.year,members:vec![],
+                    culture:CulturalField::default(),shared_food:0.0,shared_material:0.0,knowledge_items:0,specialization:BTreeMap::new(),
+                });
+                self.causal_log.push(self.year,CausalNode::Outcome{resident_id:None,label:format!("settlement {} emerged",id),value:0.7});
+                self.settlements.len()-1
+            };
+            let identity=&mut self.settlements[si];
+            seen.insert(identity.id);
+            identity.center=cluster.center; identity.last_seen_year=self.year; identity.members=ids.clone();
+
+            let local:Vec<&Resident>=ids.iter().filter_map(|id|self.residents.iter().find(|r|r.id==*id&&r.health>0.0)).collect();
+            let mut knowledge:BTreeSet<String>=BTreeSet::new();
+            let mut skills:BTreeMap<ActionPrimitive,(f32,u32)>=BTreeMap::new();
+            for r in &local {
+                for key in r.knowledge.items.keys(){knowledge.insert(key.clone());}
+                let success=*r.mind.learned_action_value.get(&r.current_action).unwrap_or(&0.0);
+                let prestige=r.life.social.relations.values().map(|x|x.prestige.max(0.0)).fold(0.0,f32::max);
+                identity.culture.observe(r.current_action,success,prestige,0.35);
+                for (&a,s) in &r.practice.actions {
+                    let e=skills.entry(a).or_insert((0.0,0));e.0+=s.skill;e.1+=1;
+                }
+            }
+            identity.knowledge_items=knowledge.len();
+            identity.specialization.clear();
+            for (a,(sum,n)) in skills {if n>0{identity.specialization.insert(a,sum/n as f32);}}
+            identity.shared_food=self.households.iter().filter(|h|dist(h.home,identity.center)<=55.0).map(|h|h.stored_food).sum();
+            identity.shared_material=self.households.iter().filter(|h|dist(h.home,identity.center)<=55.0).map(|h|h.shared_material).sum();
+        }
+
+        for s in &mut self.settlements {
+            if !seen.contains(&s.id) && self.year-s.last_seen_year>2.0 {s.members.clear();}
         }
     }
 
