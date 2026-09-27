@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{MonsterBlueprint,PixelCell,PixelSkin}, pixel_animation::{body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
+use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{AnchorKind,MonsterBlueprint,PixelAnchor,PixelCell,PixelSkin}, pixel_animation::{body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
@@ -46,10 +46,11 @@ struct ViewerState {
     animal:AnimalArchetype, monster:MonsterArchetype,
     monster_lab:bool, monster_blueprint:MonsterBlueprint, monster_mirror:bool,
     monster_palette:u8, monster_emissive:bool, monster_fill:bool, blueprint_library:BlueprintLibrary,
+    anchor_mode:Option<AnchorKind>,
 }
 impl Default for ViewerState {
     fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None,tool:GodTool::Inspect,tool_radius:70.0,tool_intensity:0.8,animal:AnimalArchetype::default(),monster:MonsterArchetype::default(),
-            monster_lab:false,monster_blueprint:MonsterBlueprint{id:1,name:"Custom".into(),skin:PixelSkin::new(16,16),archetype:MonsterArchetype::default(),scale:1.0},monster_mirror:true,monster_palette:1,monster_emissive:false,monster_fill:false,blueprint_library:BlueprintLibrary{monsters:vec![],capacity:32}} }
+            monster_lab:false,monster_blueprint:MonsterBlueprint{id:1,name:"Custom".into(),skin:PixelSkin::new(16,16),archetype:MonsterArchetype::default(),scale:1.0,anchors:vec![]},monster_mirror:true,monster_palette:1,monster_emissive:false,monster_fill:false,blueprint_library:BlueprintLibrary{monsters:vec![],capacity:32},anchor_mode:None} }
 }
 
 fn main() {
@@ -228,6 +229,12 @@ fn controls(
     if keys.just_pressed(KeyCode::KeyL){state.monster_lab=!state.monster_lab;state.monster_blueprint.archetype=state.monster;}
     if keys.just_pressed(KeyCode::KeySemicolon){state.monster_mirror=!state.monster_mirror;}
     if keys.just_pressed(KeyCode::KeyE){state.monster_emissive=!state.monster_emissive;}
+    if keys.just_pressed(KeyCode::F1)&&state.monster_lab{state.anchor_mode=Some(AnchorKind::Head);}
+    if keys.just_pressed(KeyCode::F2)&&state.monster_lab{state.anchor_mode=Some(AnchorKind::Eye);}
+    if keys.just_pressed(KeyCode::F3)&&state.monster_lab{state.anchor_mode=Some(AnchorKind::Foot);}
+    if keys.just_pressed(KeyCode::F4)&&state.monster_lab{state.anchor_mode=Some(AnchorKind::Tail);}
+    if keys.just_pressed(KeyCode::F5)&&state.monster_lab{state.anchor_mode=Some(AnchorKind::Attack);}
+    if keys.just_pressed(KeyCode::Escape)&&state.monster_lab{state.anchor_mode=None;}
     if keys.just_pressed(KeyCode::KeyF)&&state.monster_lab{state.monster_fill=!state.monster_fill;}
     if keys.just_pressed(KeyCode::Digit6)&&state.monster_lab{state.monster_palette=1;}
     if keys.just_pressed(KeyCode::Digit7)&&state.monster_lab{state.monster_palette=2;}
@@ -440,7 +447,7 @@ fn update_ui(
         if state.monster_lab {
             let skin=&state.monster_blueprint.skin;let mut grid=String::new();
             for y in 0..skin.height{for x in 0..skin.width{let p=skin.pixels[skin.index(x,y).unwrap()];grid.push(if p.filled{'#'}else{'·'});}grid.push('\n');}
-            t.0=format!("MONSTER LAB — {}x{}  [L close] [C clear] [R seed silhouette] [; mirror {}]\n{}\ncoverage {:.0}% · scale {:.1}\nMASS {:.0}kg SPEED {:.2} AGGR {:.2}\nLMB paint · RMB erase · F fill · E emissive\nF6/F7/F8 16/24/32 · F9 save · F10/F11 library",skin.width,skin.height,if state.monster_mirror{"ON"}else{"OFF"},grid,skin.filled_fraction()*100.0,state.monster_blueprint.scale,state.monster.body_mass_kg,state.monster.speed,state.monster.aggression);
+            t.0=format!("MONSTER LAB — {}x{}  [L close] [C clear] [R seed silhouette] [; mirror {}]\n{}\ncoverage {:.0}% · scale {:.1}\nMASS {:.0}kg SPEED {:.2} AGGR {:.2}\nANCHOR {:?} · F1 head F2 eye F3 foot F4 tail F5 attack Esc paint\nLMB paint · RMB erase · F fill · E emissive\nF6/F7/F8 16/24/32 · F9 save · F10/F11 library",skin.width,skin.height,if state.monster_mirror{"ON"}else{"OFF"},grid,skin.filled_fraction()*100.0,state.monster_blueprint.scale,state.monster.body_mass_kg,state.monster.speed,state.monster.aggression,state.anchor_mode);
         }
     }
     if let Ok(mut t)=inspector.single_mut() {
