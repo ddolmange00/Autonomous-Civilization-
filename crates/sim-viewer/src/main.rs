@@ -1,9 +1,10 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{MonsterBlueprint,PixelCell,PixelSkin}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
+use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{MonsterBlueprint,PixelCell,PixelSkin}, pixel_animation::{body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
 #[derive(Component)] struct MonsterSprite(u64);
+#[derive(Component)] struct MonsterPixel{ monster_id:u64,x:u8,y:u8,width:u8,height:u8,base_x:f32,base_y:f32 }
 #[derive(Component)] struct AnimalSprite(u64);
 #[derive(Component)] struct FeatureSprite(u64);
 #[derive(Component)] struct HudText;
@@ -273,6 +274,7 @@ fn sync_world(
     mut residents:Query<(&ResidentSprite,&mut Transform,&mut Sprite)>,
     mut monsters:Query<(Entity,&MonsterSprite,&mut Transform,&mut Sprite)>,
     mut animals:Query<(Entity,&AnimalSprite,&mut Transform,&mut Sprite)>,
+    mut monster_pixels:Query<(&MonsterPixel,&mut Transform)>,
     mut features:Query<(Entity,&FeatureSprite,&mut Transform)>,
 ) {
     for (tag,mut t,mut sprite) in &mut residents {
@@ -322,7 +324,7 @@ fn sync_world(
                             let px=(x as f32-(skin.width as f32-1.0)*0.5)*scale;
                             let py=((skin.height as f32-1.0)*0.5-y as f32)*scale;
                             p.spawn((Sprite::from_color(if cell.emissive{Color::srgb(0.95,0.72,0.18)}else{Color::srgb(0.72,0.16,0.13)},Vec2::splat(scale)),
-                                Transform::from_xyz(px,py,0.0)));
+                                Transform::from_xyz(px,py,0.0),MonsterPixel{monster_id:m.id,x,y,width:skin.width,height:skin.height,base_x:px,base_y:py}));
                         }}
                     });
             } else {
@@ -334,9 +336,16 @@ fn sync_world(
     for (e,tag,mut t,mut sprite) in &mut monsters {
         if let Some(m)=state.sim.monsters.iter().find(|m|m.id==tag.0) {
             t.translation.x=m.position.x;t.translation.y=m.position.y;
+            let bt=body_transform(m.motion,m.motion_phase,m.archetype.speed);t.translation.x+=bt.offset_x;t.translation.y+=bt.offset_y;t.scale.x=bt.scale_x;t.scale.y=bt.scale_y;t.rotation=Quat::from_rotation_z(bt.rotation);
             sprite.color=if m.health<=0.0 {Color::srgb(0.20,0.08,0.07)} else {Color::srgb(0.72,0.16,0.13)};
         } else { commands.entity(e).despawn(); }
+    }    for (tag,mut t) in &mut monster_pixels {
+        if let Some(m)=state.sim.monsters.iter().find(|m|m.id==tag.monster_id) {
+            let (dx,dy)=pixel_offset(tag.x,tag.y,tag.width,tag.height,m.motion,m.motion_phase);
+            t.translation.x=tag.base_x+dx;t.translation.y=tag.base_y+dy;
+        }
     }
+
 }
 
 fn tool_preview(
