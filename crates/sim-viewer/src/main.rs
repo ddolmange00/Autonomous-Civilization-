@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{AnchorKind,MonsterBlueprint,PixelAnchor,PixelCell,PixelSkin}, pixel_animation::{body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
+use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{AnchorKind,MonsterBlueprint,PixelAnchor,PixelCell,PixelSkin}, pixel_animation::{anchored_pixel_offset,body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
@@ -348,7 +348,7 @@ fn sync_world(
         } else { commands.entity(e).despawn(); }
     }    for (tag,mut t) in &mut monster_pixels {
         if let Some(m)=state.sim.monsters.iter().find(|m|m.id==tag.monster_id) {
-            let (dx,dy)=pixel_offset(tag.x,tag.y,tag.width,tag.height,m.motion,m.motion_phase);
+            let (dx,dy)=if let Some(bp)=&m.blueprint{anchored_pixel_offset(bp,tag.x,tag.y,m.motion,m.motion_phase)}else{pixel_offset(tag.x,tag.y,tag.width,tag.height,m.motion,m.motion_phase)};
             t.translation.x=tag.base_x+dx;t.translation.y=tag.base_y+dy;
         }
     }
@@ -401,7 +401,7 @@ fn world_click(
         }
         GodTool::Resident=>state.sim.spawn_resident_at(p),
         GodTool::Animal=>state.sim.spawn_animal_with(p,state.animal),
-        GodTool::Monster=>state.sim.spawn_monster_with(p,state.monster,Some(state.monster_blueprint.skin.clone())),
+        GodTool::Monster=>state.sim.spawn_monster_with(p,state.monster,Some(state.monster_blueprint.skin.clone()),Some(state.monster_blueprint.clone())),
         GodTool::Vegetation=>state.sim.grow_vegetation_at(p,(8.0+state.tool_intensity*12.0) as u32),
         GodTool::Mineral=>state.sim.deposit_minerals_at(p,(4.0+state.tool_intensity*7.0) as u32),
         GodTool::Rain|GodTool::Drought|GodTool::Fire|GodTool::Flood|GodTool::Earthquake=>{
