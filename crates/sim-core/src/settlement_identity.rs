@@ -8,6 +8,7 @@ pub struct SettlementIdentity {
     pub center:Position,
     pub founded_year:f64,
     pub last_seen_year:f64,
+    pub parent_id:Option<u64>,
     pub members:Vec<u64>,
     pub culture:CulturalField,
     pub shared_food:f32,
