@@ -14,6 +14,9 @@ use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::World
 #[derive(Component,Clone,Copy)] struct GodButton(GodTool);
 #[derive(Component)] struct ToolContextText;
 #[derive(Component)] struct MonsterLabText;
+#[derive(Component)] struct MonsterLabPanel;
+#[derive(Component,Clone,Copy)] struct PixelButton{ x:u8,y:u8 }
+#[derive(Component)] struct MonsterLabGrid;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)] enum ToolCategory { Observe, Life, Nature, Disaster }
 impl GodTool { fn category(self)->ToolCategory { match self {
@@ -39,11 +42,11 @@ struct ViewerState {
     sim:Sandbox, seed:u64, speed:f32, paused:bool, debug:bool, selected:Option<Selected>,
     tool:GodTool, tool_radius:f32, tool_intensity:f32,
     animal:AnimalArchetype, monster:MonsterArchetype,
-    monster_lab:bool, monster_blueprint:MonsterBlueprint,
+    monster_lab:bool, monster_blueprint:MonsterBlueprint, monster_mirror:bool,
 }
 impl Default for ViewerState {
     fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None,tool:GodTool::Inspect,tool_radius:70.0,tool_intensity:0.8,animal:AnimalArchetype::default(),monster:MonsterArchetype::default(),
-            monster_lab:false,monster_blueprint:MonsterBlueprint{id:1,name:"Custom".into(),skin:PixelSkin::new(16,16),archetype:MonsterArchetype::default(),scale:1.0}} }
+            monster_lab:false,monster_blueprint:MonsterBlueprint{id:1,name:"Custom".into(),skin:PixelSkin::new(16,16),archetype:MonsterArchetype::default(),scale:1.0},monster_mirror:true} }
 }
 
 fn main() {
@@ -55,7 +58,7 @@ fn main() {
             ..default()
         }))
         .add_systems(Startup,setup)
-        .add_systems(Update,(controls,god_button_interactions,tick_sim,sync_world,tool_preview,world_click,update_ui))
+        .add_systems(Update,(controls,god_button_interactions,pixel_editor_interactions,tick_sim,sync_world,tool_preview,world_click,update_ui))
         .run();
 }
 
@@ -86,6 +89,18 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
         Node{position_type:PositionType::Absolute,bottom:px(64),right:px(14),..default()},ToolContextText));
     commands.spawn((Text::new(""),TextFont::from_font_size(12.0),TextColor(Color::srgb(0.92,0.92,0.86)),
         Node{position_type:PositionType::Absolute,top:px(100),left:px(14),..default()},Visibility::Hidden,MonsterLabText));
+    commands.spawn((Node{
+        position_type:PositionType::Absolute,top:px(92),left:px(18),width:px(360),height:px(430),
+        display:Display::Grid,grid_template_columns:RepeatedGridTrack::flex(16,1.0),
+        grid_template_rows:RepeatedGridTrack::flex(16,1.0),row_gap:px(1),column_gap:px(1),
+        padding:UiRect::all(px(8)),..default()
+    },BackgroundColor(Color::srgba(0.035,0.045,0.038,0.96)),Visibility::Hidden,MonsterLabPanel,MonsterLabGrid))
+    .with_children(|p|{
+        for y in 0..16u8 { for x in 0..16u8 {
+            p.spawn((Button,Node{width:percent(100),height:percent(100),..default()},
+                BackgroundColor(Color::srgb(0.09,0.10,0.09)),PixelButton{x,y}));
+        }}
+    });
     commands.spawn((Sprite::from_color(Color::srgba(0.95,0.90,0.65,0.10),Vec2::splat(140.0)),Transform::from_xyz(0.0,0.0,0.4),Visibility::Hidden,ToolPreview));
     commands.spawn((Node{
         position_type:PositionType::Absolute,bottom:px(10),left:percent(14),right:percent(14),height:px(46),
@@ -114,6 +129,27 @@ fn god_button_interactions(
             Interaction::Pressed=>{state.tool=button.0;*bg=BackgroundColor(Color::srgb(0.30,0.28,0.16));}
             Interaction::Hovered=>{*bg=BackgroundColor(Color::srgb(0.20,0.21,0.16));}
             Interaction::None=>{*bg=BackgroundColor(Color::srgb(0.11,0.13,0.11));}
+        }
+    }
+}
+
+fn pixel_editor_interactions(
+    mut q:Query<(&Interaction,&PixelButton,&mut BackgroundColor),(Changed<Interaction>,With<Button>)>,
+    mut state:ResMut<ViewerState>,
+) {
+    if !state.monster_lab{return;}
+    for (interaction,pixel,mut bg) in &mut q {
+        if *interaction==Interaction::Pressed {
+            let Some(i)=state.monster_blueprint.skin.index(pixel.x,pixel.y) else{continue;};
+            let next=!state.monster_blueprint.skin.pixels[i].filled;
+            state.monster_blueprint.skin.pixels[i]=PixelCell{filled:next,palette:1,emissive:false};
+            if state.monster_mirror {
+                let mx=state.monster_blueprint.skin.width-1-pixel.x;
+                if let Some(mi)=state.monster_blueprint.skin.index(mx,pixel.y) {
+                    state.monster_blueprint.skin.pixels[mi]=PixelCell{filled:next,palette:1,emissive:false};
+                }
+            }
+            *bg=BackgroundColor(if next{Color::srgb(0.72,0.22,0.16)}else{Color::srgb(0.09,0.10,0.09)});
         }
     }
 }
@@ -152,6 +188,7 @@ fn controls(
     if keys.just_pressed(KeyCode::KeyB){state.monster.aggression=(state.monster.aggression-0.1).max(0.0);}
     if keys.just_pressed(KeyCode::KeyP){state.monster.aggression=(state.monster.aggression+0.1).min(1.0);}
     if keys.just_pressed(KeyCode::KeyL){state.monster_lab=!state.monster_lab;state.monster_blueprint.archetype=state.monster;}
+    if keys.just_pressed(KeyCode::KeySemicolon){state.monster_mirror=!state.monster_mirror;}
     if state.monster_lab {
         if keys.just_pressed(KeyCode::KeyC){for p in &mut state.monster_blueprint.skin.pixels{*p=PixelCell::default();}}
         if keys.just_pressed(KeyCode::KeyR){for y in 0..state.monster_blueprint.skin.height{for x in 0..state.monster_blueprint.skin.width{let on=((x as u64*17+y as u64*31+state.seed)%7)<3;if on{state.monster_blueprint.skin.set(x,y,PixelCell{filled:true,palette:1,emissive:false});}}}}
