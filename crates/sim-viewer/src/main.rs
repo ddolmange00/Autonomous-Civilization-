@@ -11,6 +11,7 @@ use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::World
 #[derive(Component)] struct ToolText;
 #[derive(Component)] struct EventOverlay(u64);
 #[derive(Component)] struct ToolPreview;
+#[derive(Component,Clone,Copy)] struct GodButton(GodTool);
 
 #[derive(Clone, Copy, Debug)]
 enum Selected { Resident(u64), Monster(u64), Settlement }
@@ -41,7 +42,7 @@ fn main() {
             ..default()
         }))
         .add_systems(Startup,setup)
-        .add_systems(Update,(controls,tick_sim,sync_world,tool_preview,world_click,update_ui))
+        .add_systems(Update,(controls,god_button_interactions,tick_sim,sync_world,tool_preview,world_click,update_ui))
         .run();
 }
 
@@ -67,8 +68,37 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
     commands.spawn((Text::new(""),TextFont::from_font_size(14.0),TextColor(Color::srgb(0.88,0.92,0.86)),
         Node{position_type:PositionType::Absolute,top:px(10),right:px(12),..default()},InspectorText));
     commands.spawn((Text::new(""),TextFont::from_font_size(15.0),TextColor(Color::srgb(0.96,0.90,0.72)),
-        Node{position_type:PositionType::Absolute,bottom:px(14),left:percent(20),..default()},ToolText));
+        Node{position_type:PositionType::Absolute,bottom:px(62),left:percent(20),..default()},ToolText));
     commands.spawn((Sprite::from_color(Color::srgba(0.95,0.90,0.65,0.10),Vec2::splat(140.0)),Transform::from_xyz(0.0,0.0,0.4),Visibility::Hidden,ToolPreview));
+    commands.spawn((Node{
+        position_type:PositionType::Absolute,bottom:px(10),left:percent(14),right:percent(14),height:px(46),
+        display:Display::Flex,flex_direction:FlexDirection::Row,justify_content:JustifyContent::Center,
+        align_items:AlignItems::Center,column_gap:px(5),padding:UiRect::all(px(5)),..default()
+    },BackgroundColor(Color::srgba(0.035,0.045,0.038,0.88)))).with_children(|p|{
+        for (tool,label) in [
+            (GodTool::Inspect,"◎"),(GodTool::Resident,"H"),(GodTool::Animal,"A"),(GodTool::Monster,"M"),
+            (GodTool::Vegetation,"♣"),(GodTool::Mineral,"◆"),(GodTool::Rain,"☂"),(GodTool::Drought,"☀"),
+            (GodTool::Fire,"▲"),(GodTool::Flood,"≈"),(GodTool::Earthquake,"≋")
+        ] {
+            p.spawn((Button,Node{width:px(38),height:px(34),justify_content:JustifyContent::Center,align_items:AlignItems::Center,..default()},
+                BackgroundColor(Color::srgb(0.11,0.13,0.11)),GodButton(tool)))
+             .with_child((Text::new(label),TextFont::from_font_size(17.0),TextColor(Color::srgb(0.90,0.88,0.78))));
+        }
+    });
+
+}
+
+fn god_button_interactions(
+    mut q:Query<(&Interaction,&GodButton,&mut BackgroundColor),(Changed<Interaction>,With<Button>)>,
+    mut state:ResMut<ViewerState>,
+) {
+    for (interaction,button,mut bg) in &mut q {
+        match *interaction {
+            Interaction::Pressed=>{state.tool=button.0;*bg=BackgroundColor(Color::srgb(0.30,0.28,0.16));}
+            Interaction::Hovered=>{*bg=BackgroundColor(Color::srgb(0.20,0.21,0.16));}
+            Interaction::None=>{*bg=BackgroundColor(Color::srgb(0.11,0.13,0.11));}
+        }
+    }
 }
 
 fn controls(
