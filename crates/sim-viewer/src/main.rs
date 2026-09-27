@@ -12,6 +12,15 @@ use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::World
 #[derive(Component)] struct EventOverlay(u64);
 #[derive(Component)] struct ToolPreview;
 #[derive(Component,Clone,Copy)] struct GodButton(GodTool);
+#[derive(Component)] struct ToolContextText;
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)] enum ToolCategory { Observe, Life, Nature, Disaster }
+impl GodTool { fn category(self)->ToolCategory { match self {
+    Self::Inspect=>ToolCategory::Observe,
+    Self::Resident|Self::Animal|Self::Monster=>ToolCategory::Life,
+    Self::Vegetation|Self::Mineral|Self::Rain|Self::Drought=>ToolCategory::Nature,
+    Self::Fire|Self::Flood|Self::Earthquake=>ToolCategory::Disaster,
+} } }
 
 #[derive(Clone, Copy, Debug)]
 enum Selected { Resident(u64), Monster(u64), Settlement }
@@ -69,6 +78,8 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
         Node{position_type:PositionType::Absolute,top:px(10),right:px(12),..default()},InspectorText));
     commands.spawn((Text::new(""),TextFont::from_font_size(15.0),TextColor(Color::srgb(0.96,0.90,0.72)),
         Node{position_type:PositionType::Absolute,bottom:px(62),left:percent(20),..default()},ToolText));
+    commands.spawn((Text::new(""),TextFont::from_font_size(13.0),TextColor(Color::srgb(0.84,0.86,0.78)),
+        Node{position_type:PositionType::Absolute,bottom:px(64),right:px(14),..default()},ToolContextText));
     commands.spawn((Sprite::from_color(Color::srgba(0.95,0.90,0.65,0.10),Vec2::splat(140.0)),Transform::from_xyz(0.0,0.0,0.4),Visibility::Hidden,ToolPreview));
     commands.spawn((Node{
         position_type:PositionType::Absolute,bottom:px(10),left:percent(14),right:percent(14),height:px(46),
@@ -76,13 +87,13 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
         align_items:AlignItems::Center,column_gap:px(5),padding:UiRect::all(px(5)),..default()
     },BackgroundColor(Color::srgba(0.035,0.045,0.038,0.88)))).with_children(|p|{
         for (tool,label) in [
-            (GodTool::Inspect,"◎"),(GodTool::Resident,"H"),(GodTool::Animal,"A"),(GodTool::Monster,"M"),
-            (GodTool::Vegetation,"♣"),(GodTool::Mineral,"◆"),(GodTool::Rain,"☂"),(GodTool::Drought,"☀"),
-            (GodTool::Fire,"▲"),(GodTool::Flood,"≈"),(GodTool::Earthquake,"≋")
+            (GodTool::Inspect,"OBS"),(GodTool::Resident,"HUM"),(GodTool::Animal,"ANI"),(GodTool::Monster,"MON"),
+            (GodTool::Vegetation,"VEG"),(GodTool::Mineral,"ORE"),(GodTool::Rain,"RAN"),(GodTool::Drought,"DRY"),
+            (GodTool::Fire,"FIR"),(GodTool::Flood,"FLD"),(GodTool::Earthquake,"QUK")
         ] {
-            p.spawn((Button,Node{width:px(38),height:px(34),justify_content:JustifyContent::Center,align_items:AlignItems::Center,..default()},
+            p.spawn((Button,Node{width:px(44),height:px(34),justify_content:JustifyContent::Center,align_items:AlignItems::Center,..default()},
                 BackgroundColor(Color::srgb(0.11,0.13,0.11)),GodButton(tool)))
-             .with_child((Text::new(label),TextFont::from_font_size(17.0),TextColor(Color::srgb(0.90,0.88,0.78))));
+             .with_child((Text::new(label),TextFont::from_font_size(11.0),TextColor(Color::srgb(0.90,0.88,0.78))));
         }
     });
 
@@ -279,6 +290,7 @@ fn update_ui(
     state:Res<ViewerState>,mut hud:Query<&mut Text,(With<HudText>,Without<InspectorText>)>,
     mut inspector:Query<&mut Text,(With<InspectorText>,Without<HudText>)>,
     mut tool:Query<&mut Text,(With<ToolText>,Without<HudText>,Without<InspectorText>)>,
+    mut context:Query<&mut Text,(With<ToolContextText>,Without<ToolText>,Without<HudText>,Without<InspectorText>)>,
 ) {
     if let Ok(mut t)=hud.single_mut() {
         let alive=state.sim.residents.iter().filter(|r|r.health>0.0).count();
@@ -287,6 +299,11 @@ fn update_ui(
             state.speed as u32,if state.paused{"PAUSED"}else{""});
     }
     if let Ok(mut t)=tool.single_mut(){t.0=format!("GOD DOCK  [I] Inspect [H] Human [Z] Animal [M] Monster [T] Trees [O] Ore [N] Rain [X] Drought [F] Fire [G] Flood [Q] Quake\nACTIVE: {}   radius {:.0}   intensity {:.1}   [[ / ]] radius   [, / .] power",state.tool.label(),state.tool_radius,state.tool_intensity);}
+    if let Ok(mut t)=context.single_mut(){
+        let cat=match state.tool.category(){ToolCategory::Observe=>"OBSERVE",ToolCategory::Life=>"LIFE",ToolCategory::Nature=>"NATURE",ToolCategory::Disaster=>"DISASTER"};
+        let hint=match state.tool {GodTool::Inspect=>"click an entity",GodTool::Resident=>"spawn autonomous resident",GodTool::Animal=>"spawn wildlife",GodTool::Monster=>"spawn hostile pressure",GodTool::Vegetation=>"grow local vegetation",GodTool::Mineral=>"deposit material patch",GodTool::Rain=>"local rainfall event",GodTool::Drought=>"local water stress",GodTool::Fire=>"local fire pressure",GodTool::Flood=>"local flood pressure",GodTool::Earthquake=>"local seismic pressure"};
+        t.0=format!("{} / {}\n{}\nradius {:.0} · power {:.1}",cat,state.tool.label(),hint,state.tool_radius,state.tool_intensity);
+    }
     if let Ok(mut t)=inspector.single_mut() {
         t.0=match state.selected {
             None=>"CLICK AN ENTITY\n\nF3 toggles internal cognition".into(),
