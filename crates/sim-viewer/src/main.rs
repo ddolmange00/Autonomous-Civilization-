@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprints::{MonsterBlueprint,PixelCell,PixelSkin}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
+use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{MonsterBlueprint,PixelCell,PixelSkin}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
@@ -43,10 +43,11 @@ struct ViewerState {
     tool:GodTool, tool_radius:f32, tool_intensity:f32,
     animal:AnimalArchetype, monster:MonsterArchetype,
     monster_lab:bool, monster_blueprint:MonsterBlueprint, monster_mirror:bool,
+    monster_palette:u8, monster_emissive:bool, monster_fill:bool, blueprint_library:BlueprintLibrary,
 }
 impl Default for ViewerState {
     fn default()->Self { let seed=847_291; Self{sim:Sandbox::new(seed),seed,speed:1.0,paused:false,debug:true,selected:None,tool:GodTool::Inspect,tool_radius:70.0,tool_intensity:0.8,animal:AnimalArchetype::default(),monster:MonsterArchetype::default(),
-            monster_lab:false,monster_blueprint:MonsterBlueprint{id:1,name:"Custom".into(),skin:PixelSkin::new(16,16),archetype:MonsterArchetype::default(),scale:1.0},monster_mirror:true} }
+            monster_lab:false,monster_blueprint:MonsterBlueprint{id:1,name:"Custom".into(),skin:PixelSkin::new(16,16),archetype:MonsterArchetype::default(),scale:1.0},monster_mirror:true,monster_palette:1,monster_emissive:false,monster_fill:false,blueprint_library:BlueprintLibrary{monsters:vec![],capacity:32}} }
 }
 
 fn main() {
@@ -141,12 +142,13 @@ fn pixel_editor_interactions(
     for (interaction,pixel,mut bg) in &mut q {
         if *interaction==Interaction::Pressed {
             let Some(i)=state.monster_blueprint.skin.index(pixel.x,pixel.y) else{continue;};
+            if state.monster_fill {let cell=PixelCell{filled:true,palette:state.monster_palette,emissive:state.monster_emissive};state.monster_blueprint.skin.flood_fill(pixel.x,pixel.y,cell);continue;}
             let next=!state.monster_blueprint.skin.pixels[i].filled;
-            state.monster_blueprint.skin.pixels[i]=PixelCell{filled:next,palette:1,emissive:false};
+            state.monster_blueprint.skin.pixels[i]=PixelCell{filled:next,palette:state.monster_palette,emissive:state.monster_emissive};
             if state.monster_mirror {
                 let mx=state.monster_blueprint.skin.width-1-pixel.x;
                 if let Some(mi)=state.monster_blueprint.skin.index(mx,pixel.y) {
-                    state.monster_blueprint.skin.pixels[mi]=PixelCell{filled:next,palette:1,emissive:false};
+                    state.monster_blueprint.skin.pixels[mi]=PixelCell{filled:next,palette:state.monster_palette,emissive:state.monster_emissive};
                 }
             }
             *bg=BackgroundColor(if next{Color::srgb(0.72,0.22,0.16)}else{Color::srgb(0.09,0.10,0.09)});
@@ -164,7 +166,8 @@ fn sync_monster_lab(
         for (p,mut bg) in &mut pixels {
             if let Some(i)=state.monster_blueprint.skin.index(p.x,p.y) {
                 let cell=state.monster_blueprint.skin.pixels[i];
-                *bg=BackgroundColor(if cell.filled{if cell.emissive{Color::srgb(0.95,0.72,0.18)}else{Color::srgb(0.72,0.22,0.16)}}else{Color::srgb(0.09,0.10,0.09)});
+                let normal=match cell.palette{2=>Color::srgb(0.18,0.48,0.72),3=>Color::srgb(0.48,0.68,0.28),4=>Color::srgb(0.62,0.42,0.72),_=>Color::srgb(0.72,0.22,0.16)};
+                *bg=BackgroundColor(if cell.filled{if cell.emissive{Color::srgb(0.95,0.72,0.18)}else{normal}}else{Color::srgb(0.09,0.10,0.09)});
             }
         }
     }
@@ -205,6 +208,16 @@ fn controls(
     if keys.just_pressed(KeyCode::KeyP){state.monster.aggression=(state.monster.aggression+0.1).min(1.0);}
     if keys.just_pressed(KeyCode::KeyL){state.monster_lab=!state.monster_lab;state.monster_blueprint.archetype=state.monster;}
     if keys.just_pressed(KeyCode::KeySemicolon){state.monster_mirror=!state.monster_mirror;}
+    if keys.just_pressed(KeyCode::KeyE){state.monster_emissive=!state.monster_emissive;}
+    if keys.just_pressed(KeyCode::KeyF)&&state.monster_lab{state.monster_fill=!state.monster_fill;}
+    if keys.just_pressed(KeyCode::Digit6)&&state.monster_lab{state.monster_palette=1;}
+    if keys.just_pressed(KeyCode::Digit7)&&state.monster_lab{state.monster_palette=2;}
+    if keys.just_pressed(KeyCode::Digit8)&&state.monster_lab{state.monster_palette=3;}
+    if keys.just_pressed(KeyCode::Digit9)&&state.monster_lab{state.monster_palette=4;}
+    if keys.just_pressed(KeyCode::F6)&&state.monster_lab{state.monster_blueprint.skin=state.monster_blueprint.skin.resize_nearest(16,16);}
+    if keys.just_pressed(KeyCode::F7)&&state.monster_lab{state.monster_blueprint.skin=state.monster_blueprint.skin.resize_nearest(24,24);}
+    if keys.just_pressed(KeyCode::F8)&&state.monster_lab{state.monster_blueprint.skin=state.monster_blueprint.skin.resize_nearest(32,32);}
+    if keys.just_pressed(KeyCode::F9)&&state.monster_lab{state.monster_blueprint.archetype=state.monster;state.blueprint_library.save(state.monster_blueprint.clone());}
     if state.monster_lab {
         if keys.just_pressed(KeyCode::KeyC){for p in &mut state.monster_blueprint.skin.pixels{*p=PixelCell::default();}}
         if keys.just_pressed(KeyCode::KeyR){for y in 0..state.monster_blueprint.skin.height{for x in 0..state.monster_blueprint.skin.width{let on=((x as u64*17+y as u64*31+state.seed)%7)<3;if on{state.monster_blueprint.skin.set(x,y,PixelCell{filled:true,palette:1,emissive:false});}}}}
