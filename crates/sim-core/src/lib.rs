@@ -1,3 +1,11 @@
+pub mod structures;
+pub mod soil;
+pub mod provenance;
+pub mod plants;
+pub mod hydrology;
+pub mod ground_truth;
+pub mod climate;
+pub mod affordances;
 pub mod agency;
 pub mod chemistry;
 pub mod cognition;
