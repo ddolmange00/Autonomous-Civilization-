@@ -60,13 +60,25 @@ fn unit(seed:u64, stream:u64)->f32 {
 }
 fn signed(seed:u64,stream:u64)->f32 { unit(seed,stream)*2.0-1.0 }
 fn dist(a:Position,b:Position)->f32 { ((a.x-b.x).powi(2)+(a.y-b.y).powi(2)).sqrt() }
-fn move_toward(p:&mut Position,target:Position,amount:f32) {
-    let dx=target.x-p.x; let dy=target.y-p.y; let d=(dx*dx+dy*dy).sqrt();
-    if d>0.001 { let s=amount.min(d)/d; p.x+=dx*s; p.y+=dy*s; }
+fn blocked(pos:Position,features:&[SandboxFeature])->bool {
+    features.iter().any(|f|{
+        let r=match f.kind {FeatureKind::DeepWater=>17.0,FeatureKind::RockFace=>7.0,_=>return false};
+        dist(pos,f.position)<r
+    })
 }
-fn move_away(p:&mut Position,target:Position,amount:f32) {
-    let dx=p.x-target.x; let dy=p.y-target.y; let d=(dx*dx+dy*dy).sqrt();
-    if d>0.001 { p.x+=dx/d*amount; p.y+=dy/d*amount; }
+fn try_move(p:&mut Position,dx:f32,dy:f32,amount:f32,features:&[SandboxFeature]) {
+    let d=(dx*dx+dy*dy).sqrt(); if d<=0.001{return;}
+    let s=amount.min(d)/d; let direct=Position{x:p.x+dx*s,y:p.y+dy*s};
+    if !blocked(direct,features){*p=direct;return;}
+    let left=Position{x:p.x-dy/d*amount,y:p.y+dx/d*amount};
+    let right=Position{x:p.x+dy/d*amount,y:p.y-dx/d*amount};
+    if !blocked(left,features){*p=left;} else if !blocked(right,features){*p=right;}
+}
+fn move_toward(p:&mut Position,target:Position,amount:f32,features:&[SandboxFeature]) {
+    try_move(p,target.x-p.x,target.y-p.y,amount,features);
+}
+fn move_away(p:&mut Position,target:Position,amount:f32,features:&[SandboxFeature]) {
+    try_move(p,p.x-target.x,p.y-target.y,amount,features);
 }
 
 impl Sandbox {
@@ -231,10 +243,10 @@ impl Sandbox {
             });
             if let Some(t)=target {
                 match chosen.action {
-                    ActionPrimitive::Avoid|ActionPrimitive::Hide=>move_away(&mut r.position,t,days*1.4),
-                    ActionPrimitive::Attack=>move_toward(&mut r.position,t,days*1.8),
+                    ActionPrimitive::Avoid|ActionPrimitive::Hide=>move_away(&mut r.position,t,days*1.4,&features),
+                    ActionPrimitive::Attack=>move_toward(&mut r.position,t,days*1.8,&features),
                     ActionPrimitive::Gather|ActionPrimitive::Carry|ActionPrimitive::Observe|ActionPrimitive::Experiment|
-                    ActionPrimitive::Dig|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Bind=>move_toward(&mut r.position,t,days*0.7),
+                    ActionPrimitive::Dig|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Bind=>move_toward(&mut r.position,t,days*0.7,&features),
                     _=>{}
                 }
             }
@@ -286,7 +298,7 @@ impl Sandbox {
         for a in &mut self.animals {
             if a.health<=0.0 {continue;} a.hunger=(a.hunger+days*0.002).clamp(0.0,1.0);
             let nearest_monster=self.monsters.iter().filter(|m|m.health>0.0).map(|m|(m.position,dist(a.position,m.position))).min_by(|x,y|x.1.total_cmp(&y.1));
-            if let Some((p,d))=nearest_monster {if d<70.0 {move_away(&mut a.position,p,days*(0.35+a.archetype.speed+a.archetype.fear*0.45));continue;}}
+            if let Some((p,d))=nearest_monster {if d<70.0 {move_away(&mut a.position,p,days*(0.35+a.archetype.speed+a.archetype.fear*0.45),&features);continue;}}
             a.position.x+=signed(self.seed,self.year.to_bits()+a.id)*days*0.25;a.position.y+=signed(self.seed,self.year.to_bits()+a.id+3)*days*0.25;
         }
         for m in &mut self.monsters {
@@ -304,7 +316,7 @@ impl Sandbox {
                     m.hunger=(m.hunger-damage*1.5).max(0.0);
                 } else if d<180.0 && m.hunger>0.35 {
                     m.motion=if m.archetype.speed>0.9{MotionState::Run}else{MotionState::Walk};
-                    move_toward(&mut m.position,target,days*(0.45+m.archetype.speed+m.archetype.aggression*0.35));
+                    move_toward(&mut m.position,target,days*(0.45+m.archetype.speed+m.archetype.aggression*0.35),&features);
                 } else {
                     m.position.x+=signed(self.seed,self.year.to_bits()+m.id)*days*0.4;
                     m.position.y+=signed(self.seed,self.year.to_bits()+m.id+1)*days*0.4;
@@ -482,7 +494,7 @@ impl Sandbox {
         let goals:Vec<(u64,Position)>=self.households.iter().filter_map(|h|h.migration_goal.map(|g|(h.id,g))).collect();
         for (hid,goal) in goals {
             for r in self.residents.iter_mut().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)) {
-                move_toward(&mut r.position,goal,days*(0.20+r.mind.traits.persistence*0.22));
+                move_toward(&mut r.position,goal,days*(0.20+r.mind.traits.persistence*0.22),&self.features);
             }
             let arrived=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)).all(|r|dist(r.position,goal)<12.0);
             if arrived {
