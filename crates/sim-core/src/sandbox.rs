@@ -243,6 +243,14 @@ impl Sandbox {
             if matches!(chosen.action,ActionPrimitive::Observe|ActionPrimitive::Experiment|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Dig) {
                 r.knowledge.learn(format!("action::{:?}",chosen.action),value,0.18+chosen.expected.knowledge*0.5);
             }
+            if chosen.action==ActionPrimitive::Gather {
+                if let Some(hid)=r.life.kinship.household {
+                    if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                        h.stored_food=(h.stored_food+chosen.expected.food.max(0.0)*days*2.5).min(5000.0);
+                        h.shared_material=(h.shared_material+chosen.expected.knowledge.max(0.0)*days*0.4).min(5000.0);
+                    }
+                }
+            }
             r.memory.remember(Episode{year:self.year,action:chosen.action,target:chosen.target,value,surprise:chosen.uncertainty,
                 danger:chosen.expected.physical_risk,social_visibility:0.2});
         }
@@ -435,6 +443,53 @@ impl Sandbox {
             if roll<chance {
                 r.health=0.0;
                 self.causal_log.push(year,CausalNode::Outcome{resident_id:Some(r.id),label:format!("died at age {:.1}",r.life.age(year)),value:-1.0});
+            }
+        }
+
+        // Household food use and optional migration. Pressure creates opportunity, not a forced response.
+        for h in &mut self.households {
+            let living=h.members.iter().filter(|id|self.residents.iter().any(|r|r.id==**id&&r.health>0.0)).count().max(1) as f32;
+            h.stored_food=(h.stored_food-living*0.035*days).max(0.0);
+        }
+
+        let mut proposed_goals:Vec<(u64,Position)>=Vec::new();
+        for h in &self.households {
+            if h.migration_goal.is_some(){continue;}
+            let members:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(h.id)).collect();
+            if members.is_empty(){continue;}
+            let pressure=h.pressure();
+            let disposition=members.iter().map(|r|r.mind.traits.risk_tolerance*0.35+r.mind.traits.novelty_seeking*0.40+r.mind.traits.planning_horizon*0.25).sum::<f32>()/members.len() as f32;
+            let trigger=((pressure-0.40).max(0.0)*disposition*days/365.0*1.8).clamp(0.0,0.03);
+            let roll=unit(self.seed,h.id.wrapping_mul(4_294_967)^year.to_bits());
+            if roll>=trigger{continue;}
+            let mut best:Option<(Position,f32)>=None;
+            for f in self.features.iter().filter(|f|matches!(f.kind,FeatureKind::Vegetation|FeatureKind::LooseMaterial)) {
+                let d=dist(h.home,f.position);
+                if d<55.0||d>320.0{continue;}
+                let crowd=self.residents.iter().filter(|r|r.health>0.0&&dist(r.position,f.position)<40.0).count() as f32;
+                let score=f.food*1.4+f.material*0.55-f.danger*1.2-crowd*0.035-d*0.0008;
+                if best.map(|(_,s)|score>s).unwrap_or(true){best=Some((f.position,score));}
+            }
+            if let Some((goal,_))=best{proposed_goals.push((h.id,goal));}
+        }
+        for (hid,goal) in proposed_goals {
+            if let Some(h)=self.households.iter_mut().find(|h|h.id==hid){
+                h.migration_goal=Some(goal);
+                self.causal_log.push(year,CausalNode::Outcome{resident_id:None,label:format!("household {} began migration",hid),value:0.2});
+            }
+        }
+
+        let goals:Vec<(u64,Position)>=self.households.iter().filter_map(|h|h.migration_goal.map(|g|(h.id,g))).collect();
+        for (hid,goal) in goals {
+            for r in self.residents.iter_mut().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)) {
+                move_toward(&mut r.position,goal,days*(0.20+r.mind.traits.persistence*0.22));
+            }
+            let arrived=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)).all(|r|dist(r.position,goal)<12.0);
+            if arrived {
+                if let Some(h)=self.households.iter_mut().find(|h|h.id==hid){
+                    h.home=goal;h.migration_goal=None;h.cohesion=(h.cohesion+0.05).clamp(0.0,1.0);
+                    self.causal_log.push(year,CausalNode::Outcome{resident_id:None,label:format!("household {} settled new site",hid),value:0.6});
+                }
             }
         }
     }
