@@ -1,3 +1,5 @@
+pub mod development;
+pub mod social_affordances;
 pub mod settlement_detection;
 pub mod generation;
 pub mod social_dynamics;
