@@ -2,11 +2,15 @@ use crate::{agency::Traits, demography::HeritableTraits, family::Kinship, relati
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Sex { Female, Male }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LifeStage { Infant, Child, Adolescent, Adult, Elder }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LifeHistory {
     pub birth_year:f64,
+    pub sex:Sex,
     pub biological:HeritableTraits,
     pub kinship:Kinship,
     pub social:SocialMemory,
