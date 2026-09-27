@@ -278,8 +278,9 @@ impl Sandbox {
             if chosen.action==ActionPrimitive::Gather {
                 if let Some(hid)=r.life.kinship.household {
                     if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                        let material=chosen.target.and_then(|id|features.iter().find(|f|f.id==id)).map(|f|f.material).unwrap_or(0.0);
                         h.stored_food=(h.stored_food+chosen.expected.food.max(0.0)*days*2.5).min(5000.0);
-                        h.shared_material=(h.shared_material+chosen.expected.knowledge.max(0.0)*days*0.4).min(5000.0);
+                        h.shared_material=(h.shared_material+material.max(0.0)*days*0.8).min(5000.0);
                     }
                 }
             }
@@ -517,8 +518,14 @@ impl Sandbox {
 
         // Household food use and optional migration. Pressure creates opportunity, not a forced response.
         for h in &mut self.households {
-            let living=h.members.iter().filter(|id|self.residents.iter().any(|r|r.id==**id&&r.health>0.0)).count().max(1) as f32;
-            h.stored_food=(h.stored_food-living*0.035*days).max(0.0);
+            let member_ids=h.members.clone();
+            for id in member_ids {
+                let Some(r)=self.residents.iter_mut().find(|r|r.id==id&&r.health>0.0) else{continue;};
+                let demand=(0.018+r.mind.needs.hunger*0.055)*days;
+                let eaten=demand.min(h.stored_food);
+                h.stored_food-=eaten;
+                r.mind.needs.hunger=(r.mind.needs.hunger-eaten*0.9).max(0.0);
+            }
         }
 
         let mut proposed_goals:Vec<(u64,Position)>=Vec::new();
