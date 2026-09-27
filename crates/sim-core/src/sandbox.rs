@@ -2,6 +2,7 @@ use crate::{
     affordances::{generate, FeatureKind, LocalCapabilities, PerceivedFeature},
     agency::{ActionPrimitive, AgentMind, Needs, Traits},
     memory::{Episode, EpisodicMemory},
+    awareness::{Awareness, SituationKind, SituationReport},
     world::Position,
 };
 
@@ -11,7 +12,7 @@ pub struct ActionScore { pub action: ActionPrimitive, pub score: f32 }
 #[derive(Clone, Debug)]
 pub struct Resident {
     pub id:u64, pub position:Position, pub mind:AgentMind, pub memory:EpisodicMemory,
-    pub health:f32, pub current_action:ActionPrimitive, pub top_scores:Vec<ActionScore>,
+    pub health:f32, pub current_action:ActionPrimitive, pub top_scores:Vec<ActionScore>, pub awareness:Awareness,
 }
 
 #[derive(Clone, Debug)]
@@ -67,7 +68,7 @@ impl Sandbox {
             residents.push(Resident{
                 id:i+1, position:Position{x:-120.0+signed(seed,i*20+13)*55.0,y:signed(seed,i*20+14)*90.0},
                 mind,memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,
-                current_action:ActionPrimitive::Observe,top_scores:vec![],
+                current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),
             });
         }
         let mut features=Vec::new(); let mut id=10_000u64;
@@ -114,6 +115,8 @@ impl Sandbox {
             for m in &snapshot_monsters {
                 let d=dist(r.position,m.position);
                 if m.health>0.0 && d<=110.0 {
+                    let confidence=(1.0-d/140.0).clamp(0.1,1.0);
+                    r.awareness.observe(SituationReport{kind:SituationKind::CreatureThreat,source_id:Some(m.id),perceived_severity:(m.aggression*m.health).clamp(0.0,1.5),confidence,observed_year:self.year,location:[m.position.x,m.position.y]});
                     perceived.push(PerceivedFeature{id:m.id,kind:FeatureKind::Creature,distance_m:d,
                         danger:(m.aggression*m.health).clamp(0.0,1.5),food_hint:0.0,material_hint:0.25,uncertainty:(d/140.0).clamp(0.05,0.75)});
                 }
@@ -145,6 +148,19 @@ impl Sandbox {
             r.mind.learn_action(chosen.action,value,0.04);
             r.memory.remember(Episode{year:self.year,action:chosen.action,target:chosen.target,value,surprise:chosen.uncertainty,
                 danger:chosen.expected.physical_risk,social_visibility:0.2});
+        }
+        // Local hearsay: nearby residents may transmit their strongest creature-threat report.
+        let reports:Vec<_>=self.residents.iter().filter_map(|r|r.awareness.reports.get(&SituationKind::CreatureThreat).copied().map(|q|(r.id,r.position,q))).collect();
+        for r in &mut self.residents {
+            for (source,pos,report) in &reports {
+                if *source==r.id {continue;}
+                let d=dist(r.position,*pos);
+                if d<=38.0 && report.confidence>0.25 {
+                    let trust=(0.35+r.mind.traits.social_trust*0.6).clamp(0.0,1.0);
+                    let distortion=signed(self.seed,r.id.wrapping_mul(700_001)+*source)*0.22;
+                    r.awareness.hear(*report,trust,distortion,self.year);
+                }
+            }
         }
         for m in &mut self.monsters {
             if m.health<=0.0 {continue;}
