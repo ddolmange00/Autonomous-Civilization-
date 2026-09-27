@@ -1,3 +1,4 @@
+pub mod blueprint_library;
 pub mod blueprints;
 pub mod resource_kinds;
 pub mod species;
