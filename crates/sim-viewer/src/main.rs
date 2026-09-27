@@ -473,7 +473,7 @@ fn update_ui(
                 let mut s=format!("SETTLEMENT PULSE\nPopulation {}  Households {}  Villages {}\n\n",alive,state.sim.households.len(),state.sim.settlements.iter().filter(|x|!x.members.is_empty()).count());
                 for village in state.sim.settlements.iter().filter(|x|!x.members.is_empty()).take(6) {
                     let p=village.profile();
-                    s.push_str(&format!("#{}  founded Y{:.1}  pop {}\nfood {:.0} material {:.0} knowledge {}\n",village.id,village.founded_year,village.members.len(),village.shared_food,village.shared_material,village.knowledge_items));
+                    s.push_str(&format!("#{}  founded Y{:.1}  pop {}{}\nfood {:.0} material {:.0} knowledge {}\n",village.id,village.founded_year,village.members.len(),village.parent_id.map(|p|format!("  parent #{}",p)).unwrap_or_default(),village.shared_food,village.shared_material,village.knowledge_items));
                     s.push_str(&format!("culture: fight {:+.2} avoid {:+.2} experiment {:+.2} cooperate {:+.2} build {:+.2}\n",p.confrontation,p.avoidance,p.experimentation,p.cooperation,p.construction));
                     let specs=village.top_specializations(4);
                     if !specs.is_empty(){s.push_str("skills: ");for (a,x) in specs{s.push_str(&format!("{:?} {:.2}  ",a,x));}s.push('\n');}
