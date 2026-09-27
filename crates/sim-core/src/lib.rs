@@ -1,3 +1,4 @@
+pub mod settlement;
 pub mod observability;
 pub mod demography;
 pub mod awareness;
