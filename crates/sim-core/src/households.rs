@@ -9,6 +9,7 @@ pub struct Household {
     pub stored_food:f32,
     pub shared_material:f32,
     pub cohesion:f32,
+    pub migration_goal:Option<Position>,
 }
 
 impl Household {
