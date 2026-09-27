@@ -5,6 +5,7 @@ use crate::{
     awareness::{Awareness, SituationKind, SituationReport},
     events::{WorldEvent, WorldEventKind},
     species::{AnimalArchetype, MonsterArchetype},
+    blueprints::PixelSkin,
     causal_log::{CausalLog, CausalNode},
     world::Position,
 };
@@ -23,7 +24,7 @@ pub struct SandboxAnimal { pub id:u64, pub position:Position, pub hunger:f32, pu
 
 #[derive(Clone, Debug)]
 pub struct SandboxMonster {
-    pub id:u64, pub position:Position, pub hunger:f32, pub health:f32, pub archetype:MonsterArchetype,
+    pub id:u64, pub position:Position, pub hunger:f32, pub health:f32, pub archetype:MonsterArchetype, pub skin:Option<PixelSkin>,
 }
 
 #[derive(Clone, Debug)]
@@ -145,11 +146,11 @@ impl Sandbox {
         self.spawn_monster_at(Position{x:130.0+signed(self.seed,3000+n)*80.0,y:signed(self.seed,3200+n)*140.0});
     }
     pub fn spawn_monster_at(&mut self, position:Position) {
-        let n=self.monsters.len() as u64; let mut archetype=MonsterArchetype::default(); archetype.aggression=0.55+unit(self.seed,3400+n)*0.4; self.spawn_monster_with(position,archetype);
+        let n=self.monsters.len() as u64; let mut archetype=MonsterArchetype::default(); archetype.aggression=0.55+unit(self.seed,3400+n)*0.4; self.spawn_monster_with(position,archetype,None);
     }
-    pub fn spawn_monster_with(&mut self, position:Position, archetype:MonsterArchetype) {
+    pub fn spawn_monster_with(&mut self, position:Position, archetype:MonsterArchetype, skin:Option<PixelSkin>) {
         let id=self.next_id; self.next_id+=1;
-        self.monsters.push(SandboxMonster{id,position,hunger:0.7,health:1.0,archetype});
+        self.monsters.push(SandboxMonster{id,position,hunger:0.7,health:1.0,archetype,skin});
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Monster spawned".into()});
     }
 
