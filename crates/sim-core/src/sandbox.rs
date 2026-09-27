@@ -18,6 +18,9 @@ pub struct Resident {
 }
 
 #[derive(Clone, Debug)]
+pub struct SandboxAnimal { pub id:u64, pub position:Position, pub hunger:f32, pub fear:f32, pub health:f32 }
+
+#[derive(Clone, Debug)]
 pub struct SandboxMonster {
     pub id:u64, pub position:Position, pub hunger:f32, pub aggression:f32, pub health:f32,
 }
@@ -30,7 +33,7 @@ pub struct SandboxFeature {
 
 #[derive(Clone, Debug)]
 pub struct Sandbox {
-    pub seed:u64, pub year:f64, pub residents:Vec<Resident>, pub monsters:Vec<SandboxMonster>,
+    pub seed:u64, pub year:f64, pub residents:Vec<Resident>, pub animals:Vec<SandboxAnimal>, pub monsters:Vec<SandboxMonster>,
     pub features:Vec<SandboxFeature>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
 }
 
@@ -88,7 +91,43 @@ impl Sandbox {
             features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,
                 position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0}); id+=1;
         }
-        Self{seed,year:0.0,residents,monsters:vec![],features,events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
+        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
+    }
+
+    pub fn spawn_resident_at(&mut self, position:Position) {
+        let id=self.next_id; self.next_id+=1;
+        let s=self.seed^id;
+        let mind=AgentMind{
+            traits:Traits{threat_sensitivity:unit(s,1),aggression:unit(s,2),curiosity:unit(s,3),empathy:unit(s,4),
+                conformity:unit(s,5),persistence:unit(s,6),risk_tolerance:unit(s,7),novelty_seeking:unit(s,8),
+                social_trust:unit(s,9),planning_horizon:unit(s,10)},
+            needs:Needs{hunger:0.25,safety:0.2,rest:0.15,belonging:0.3,status:0.2,curiosity:0.35,care:0.25},
+            ..Default::default()
+        };
+        self.residents.push(Resident{id,position,mind,memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,
+            current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default()});
+        self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Resident spawned".into()});
+    }
+    pub fn spawn_animal_at(&mut self, position:Position) {
+        let id=self.next_id;self.next_id+=1;
+        self.animals.push(SandboxAnimal{id,position,hunger:0.35,fear:0.55+unit(self.seed,id)*0.35,health:1.0});
+        self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Animal spawned".into()});
+    }
+    pub fn grow_vegetation_at(&mut self, position:Position, count:u32) {
+        for i in 0..count {
+            let id=self.next_id;self.next_id+=1;
+            let a=unit(self.seed,id*3)*std::f32::consts::TAU;let r=unit(self.seed,id*3+1)*32.0;
+            self.features.push(SandboxFeature{id,kind:FeatureKind::Vegetation,position:Position{x:position.x+a.cos()*r,y:position.y+a.sin()*r},
+                danger:0.02,food:0.12+unit(self.seed,id*3+2)*0.25,material:0.5});
+        }
+    }
+    pub fn deposit_minerals_at(&mut self, position:Position, count:u32) {
+        for i in 0..count {
+            let id=self.next_id;self.next_id+=1;
+            let a=unit(self.seed,id*5)*std::f32::consts::TAU;let r=unit(self.seed,id*5+1)*24.0;
+            self.features.push(SandboxFeature{id,kind:FeatureKind::LooseMaterial,position:Position{x:position.x+a.cos()*r,y:position.y+a.sin()*r},
+                danger:0.01,food:0.0,material:0.65+unit(self.seed,id*5+2)*0.3});
+        }
     }
 
     pub fn inject_event(&mut self, kind:WorldEventKind, position:Position, radius:f32, intensity:f32, duration_days:f32)->u64 {
@@ -113,6 +152,7 @@ impl Sandbox {
     pub fn step(&mut self,days:f32) {
         self.year+=days as f64/365.0;
         let snapshot_monsters=self.monsters.clone();
+        let snapshot_animals=self.animals.clone();
         let active_events:Vec<_>=self.events.iter().copied().filter(|e|e.active(self.year)).collect();
         let features=self.features.clone();
         for r in &mut self.residents {
@@ -143,6 +183,10 @@ impl Sandbox {
                     perceived.push(PerceivedFeature{id:f.id,kind:f.kind,distance_m:d,danger:f.danger,
                         food_hint:f.food,material_hint:f.material,uncertainty:(d/120.0).clamp(0.05,0.8)});
                 }
+            }
+            for a in &snapshot_animals {
+                let d=dist(r.position,a.position);
+                if a.health>0.0 && d<=75.0 { perceived.push(PerceivedFeature{id:a.id,kind:FeatureKind::Creature,distance_m:d,danger:0.08+a.fear*0.08,food_hint:0.35,material_hint:0.18,uncertainty:(d/100.0).clamp(0.05,0.7)}); }
             }
             for m in &snapshot_monsters {
                 let d=dist(r.position,m.position);
@@ -197,6 +241,12 @@ impl Sandbox {
             }
         }
         self.events.retain(|e|e.active(self.year));
+        for a in &mut self.animals {
+            if a.health<=0.0 {continue;} a.hunger=(a.hunger+days*0.002).clamp(0.0,1.0);
+            let nearest_monster=self.monsters.iter().filter(|m|m.health>0.0).map(|m|(m.position,dist(a.position,m.position))).min_by(|x,y|x.1.total_cmp(&y.1));
+            if let Some((p,d))=nearest_monster {if d<70.0 {move_away(&mut a.position,p,days*(0.5+a.fear));continue;}}
+            a.position.x+=signed(self.seed,self.year.to_bits()+a.id)*days*0.25;a.position.y+=signed(self.seed,self.year.to_bits()+a.id+3)*days*0.25;
+        }
         for m in &mut self.monsters {
             if m.health<=0.0 {continue;}
             m.hunger=(m.hunger+days*0.004).clamp(0.0,1.0);
