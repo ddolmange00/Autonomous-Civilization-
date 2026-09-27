@@ -12,6 +12,7 @@ pub mod monster_ai;
 pub mod monsters;
 pub mod mutation;
 pub mod processing;
+pub mod physics_laws;
 pub mod scenario;
 pub mod traversal;
 pub mod world;
