@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{AnchorKind,MonsterBlueprint,PixelAnchor,PixelCell,PixelSkin}, pixel_animation::{anchored_pixel_offset,body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
+use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{AnchorKind,MonsterBlueprint,PixelAnchor,PixelCell,PixelSkin}, pixel_animation::{anchored_pixel_offset,body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, settlement_detection::detect_settlements, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
@@ -278,13 +278,15 @@ fn tick_sim(time:Res<Time>,mut state:ResMut<ViewerState>) {
 
 fn sync_world(
     mut commands:Commands,state:Res<ViewerState>,
-    mut residents:Query<(&ResidentSprite,&mut Transform,&mut Sprite)>,
+    mut residents:Query<(Entity,&ResidentSprite,&mut Transform,&mut Sprite)>,
     mut monsters:Query<(Entity,&MonsterSprite,&mut Transform,&mut Sprite)>,
     mut animals:Query<(Entity,&AnimalSprite,&mut Transform,&mut Sprite)>,
     mut monster_pixels:Query<(&MonsterPixel,&mut Transform)>,
     mut features:Query<(Entity,&FeatureSprite,&mut Transform)>,
 ) {
-    for (tag,mut t,mut sprite) in &mut residents {
+    let existing_residents:Vec<u64>=residents.iter().map(|(_,r,_,_)|r.0).collect();
+    for r in &state.sim.residents {if !existing_residents.contains(&r.id){commands.spawn((Sprite::from_color(Color::srgb(0.88,0.76,0.48),Vec2::new(7.0,10.0)),Transform::from_xyz(r.position.x,r.position.y,1.0),ResidentSprite(r.id)));}}
+    for (_,tag,mut t,mut sprite) in &mut residents {
         if let Some(r)=state.sim.residents.iter().find(|r|r.id==tag.0) {
             t.translation.x=r.position.x;t.translation.y=r.position.y;
             sprite.color=if r.health<=0.0 {Color::srgb(0.20,0.16,0.14)} else {Color::srgb(0.88,0.76,0.48)};
@@ -454,7 +456,7 @@ fn update_ui(
         t.0=match state.selected {
             None=>"CLICK AN ENTITY\n\nF3 toggles internal cognition".into(),
             Some(Selected::Resident(id))=>state.sim.residents.iter().find(|r|r.id==id).map(|r|{
-                let mut s=format!("RESIDENT #{}\nHP {:.0}%   ACTION {:?}\n\nNeeds\nhunger {:.2} safety {:.2} curiosity {:.2}\n",r.id,r.health*100.0,r.current_action,r.mind.needs.hunger,r.mind.needs.safety,r.mind.needs.curiosity);
+                let mut s=format!("RESIDENT #{}\nHP {:.0}%   ACTION {:?}\nAGE {:.1}  SEX {:?}\nPARTNERS {} CHILDREN {}\nKNOWLEDGE {} items\n\nNeeds\nhunger {:.2} safety {:.2} curiosity {:.2}\n",r.id,r.health*100.0,r.current_action,r.life.age(state.sim.year),r.life.sex,r.life.kinship.partners.len(),r.life.kinship.children.len(),r.knowledge.items.len(),r.mind.needs.hunger,r.mind.needs.safety,r.mind.needs.curiosity);
                 if state.debug {
                     s.push_str(&format!("\nTraits\naggr {:.2} risk {:.2} curious {:.2}\nempathy {:.2} conform {:.2} persist {:.2}\n\nDecision scores\n",
                         r.mind.traits.aggression,r.mind.traits.risk_tolerance,r.mind.traits.curiosity,r.mind.traits.empathy,r.mind.traits.conformity,r.mind.traits.persistence));
