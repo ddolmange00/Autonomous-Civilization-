@@ -10,7 +10,9 @@ use crate::{
     knowledge::KnowledgeStore,
     family::Kinship,
     relationships::SocialMemory,
-    life_history::LifeHistory,
+    life_history::{LifeHistory,LifeStage,Sex},
+    social_dynamics::spend_time,
+    generation::{annual_mortality_risk,conception_propensity,ReproductionContext},
     demography::HeritableTraits,
     causal_log::{CausalLog, CausalNode},
     world::Position,
@@ -83,7 +85,7 @@ impl Sandbox {
             residents.push(Resident{
                 id:i+1, position:Position{x:-120.0+signed(seed,i*20+13)*55.0,y:signed(seed,i*20+14)*90.0},
                 mind,memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,
-                current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:-18.0-unit(seed,i*20+15) as f64*28.0,biological:HeritableTraits{stature:unit(seed,i*20+16),body_mass:unit(seed,i*20+17),cold_tolerance:unit(seed,i*20+18),heat_tolerance:unit(seed,i*20+19),pigmentation:unit(seed,i*20+20),disease_resistance:unit(seed,i*20+21)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),
+                current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:-18.0-unit(seed,i*20+15) as f64*28.0,sex:if unit(seed,i*20+22)<0.5{Sex::Female}else{Sex::Male},biological:HeritableTraits{stature:unit(seed,i*20+16),body_mass:unit(seed,i*20+17),cold_tolerance:unit(seed,i*20+18),heat_tolerance:unit(seed,i*20+19),pigmentation:unit(seed,i*20+20),disease_resistance:unit(seed,i*20+21)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),
             });
         }
         let mut features=Vec::new(); let mut id=10_000u64;
@@ -115,7 +117,7 @@ impl Sandbox {
             ..Default::default()
         };
         self.residents.push(Resident{id,position,mind,memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,
-            current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:self.year-18.0-unit(s,11) as f64*22.0,biological:HeritableTraits{stature:unit(s,12),body_mass:unit(s,13),cold_tolerance:unit(s,14),heat_tolerance:unit(s,15),pigmentation:unit(s,16),disease_resistance:unit(s,17)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),});
+            current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:self.year-18.0-unit(s,11) as f64*22.0,sex:if unit(s,18)<0.5{Sex::Female}else{Sex::Male},biological:HeritableTraits{stature:unit(s,12),body_mass:unit(s,13),cold_tolerance:unit(s,14),heat_tolerance:unit(s,15),pigmentation:unit(s,16),disease_resistance:unit(s,17)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),});
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Resident spawned".into()});
     }
     pub fn spawn_animal_at(&mut self, position:Position) { self.spawn_animal_with(position,AnimalArchetype::default()); }
