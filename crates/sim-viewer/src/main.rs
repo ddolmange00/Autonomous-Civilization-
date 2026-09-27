@@ -4,6 +4,7 @@ use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::World
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
 #[derive(Component)] struct MonsterSprite(u64);
+#[derive(Component)] struct AnimalSprite(u64);
 #[derive(Component)] struct FeatureSprite(u64);
 #[derive(Component)] struct HudText;
 #[derive(Component)] struct InspectorText;
@@ -14,8 +15,12 @@ use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::World
 enum Selected { Resident(u64), Monster(u64), Settlement }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-enum GodTool { Inspect, Monster, Fire, Flood, Earthquake }
-impl GodTool { fn label(self)->&'static str { match self {Self::Inspect=>"INSPECT",Self::Monster=>"MONSTER",Self::Fire=>"FIRE",Self::Flood=>"FLOOD",Self::Earthquake=>"QUAKE"} } }
+enum GodTool { Inspect, Resident, Animal, Monster, Vegetation, Mineral, Rain, Drought, Fire, Flood, Earthquake }
+impl GodTool { fn label(self)->&'static str { match self {
+    Self::Inspect=>"INSPECT",Self::Resident=>"RESIDENT",Self::Animal=>"ANIMAL",Self::Monster=>"MONSTER",
+    Self::Vegetation=>"VEGETATION",Self::Mineral=>"MINERAL",Self::Rain=>"RAIN",Self::Drought=>"DROUGHT",
+    Self::Fire=>"FIRE",Self::Flood=>"FLOOD",Self::Earthquake=>"QUAKE"
+} } }
 
 #[derive(Resource)]
 struct ViewerState {
@@ -77,6 +82,12 @@ fn controls(
     if keys.just_pressed(KeyCode::Space){state.paused=!state.paused;}
     if keys.just_pressed(KeyCode::F3){state.debug=!state.debug;}
     if keys.just_pressed(KeyCode::KeyI){state.tool=GodTool::Inspect;}
+    if keys.just_pressed(KeyCode::KeyH){state.tool=GodTool::Resident;}
+    if keys.just_pressed(KeyCode::KeyZ){state.tool=GodTool::Animal;}
+    if keys.just_pressed(KeyCode::KeyT){state.tool=GodTool::Vegetation;}
+    if keys.just_pressed(KeyCode::KeyO){state.tool=GodTool::Mineral;}
+    if keys.just_pressed(KeyCode::KeyN){state.tool=GodTool::Rain;}
+    if keys.just_pressed(KeyCode::KeyX){state.tool=GodTool::Drought;}
     if keys.just_pressed(KeyCode::KeyM){state.tool=GodTool::Monster;}
     if keys.just_pressed(KeyCode::KeyF){state.tool=GodTool::Fire;}
     if keys.just_pressed(KeyCode::KeyG){state.tool=GodTool::Flood;}
