@@ -2,7 +2,7 @@ use crate::{awareness::SituationKind, world::Position};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WorldEventKind { Fire, Flood, Earthquake, Storm, Drought, CreatureSpawn, ResourceDrop }
+pub enum WorldEventKind { Fire, Flood, Earthquake, Storm, Rain, Drought, CreatureSpawn, ResidentSpawn, AnimalSpawn, VegetationGrowth, MineralDeposit, ResourceDrop }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct WorldEvent {
@@ -27,6 +27,8 @@ impl WorldEvent {
             WorldEventKind::Fire=>Some(SituationKind::Fire),
             WorldEventKind::Flood=>Some(SituationKind::Flood),
             WorldEventKind::Drought=>Some(SituationKind::WaterScarcity),
+            WorldEventKind::Rain=>Some(SituationKind::UnknownPhenomenon),
+            WorldEventKind::AnimalSpawn|WorldEventKind::CreatureSpawn=>Some(SituationKind::UnknownPhenomenon),
             _=>Some(SituationKind::UnknownPhenomenon),
         }
     }
