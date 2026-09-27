@@ -101,9 +101,13 @@ impl Sandbox {
 
     pub fn spawn_monster(&mut self) {
         let n=self.monsters.len() as u64;
+        self.spawn_monster_at(Position{x:130.0+signed(self.seed,3000+n)*80.0,y:signed(self.seed,3200+n)*140.0});
+    }
+    pub fn spawn_monster_at(&mut self, position:Position) {
+        let n=self.monsters.len() as u64;
         let id=self.next_id; self.next_id+=1;
-        self.monsters.push(SandboxMonster{id,position:Position{x:130.0+signed(self.seed,3000+n)*80.0,y:signed(self.seed,3200+n)*140.0},
-            hunger:0.7,aggression:0.55+unit(self.seed,3400+n)*0.4,health:1.0});
+        self.monsters.push(SandboxMonster{id,position,hunger:0.7,aggression:0.55+unit(self.seed,3400+n)*0.4,health:1.0});
+        self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Monster spawned".into()});
     }
 
     pub fn step(&mut self,days:f32) {
