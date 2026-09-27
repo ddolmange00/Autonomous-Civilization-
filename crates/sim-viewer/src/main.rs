@@ -127,7 +127,7 @@ fn sync_world(
     mut residents:Query<(&ResidentSprite,&mut Transform,&mut Sprite)>,
     mut monsters:Query<(Entity,&MonsterSprite,&mut Transform,&mut Sprite)>,
     mut animals:Query<(Entity,&AnimalSprite,&mut Transform,&mut Sprite)>,
-    mut features:Query<(&FeatureSprite,&mut Transform)>,
+    mut features:Query<(Entity,&FeatureSprite,&mut Transform)>,
 ) {
     for (tag,mut t,mut sprite) in &mut residents {
         if let Some(r)=state.sim.residents.iter().find(|r|r.id==tag.0) {
@@ -135,7 +135,20 @@ fn sync_world(
             sprite.color=if r.health<=0.0 {Color::srgb(0.20,0.16,0.14)} else {Color::srgb(0.88,0.76,0.48)};
         }
     }
-    for (tag,mut t) in &mut features {
+    let existing_features:Vec<u64>=features.iter().map(|(_,f,_)|f.0).collect();
+    for f in &state.sim.features {
+        if !existing_features.contains(&f.id) {
+            let (color,size,z)=match f.kind {
+                FeatureKind::Vegetation=>(Color::srgb(0.12,0.40,0.16),Vec2::new(7.0,10.0),-1.0),
+                FeatureKind::RockFace=>(Color::srgb(0.36,0.36,0.32),Vec2::new(11.0,11.0),-1.0),
+                FeatureKind::DeepWater=>(Color::srgba(0.10,0.34,0.42,0.35),Vec2::new(38.0,20.0),-2.0),
+                FeatureKind::LooseMaterial=>(Color::srgb(0.56,0.48,0.34),Vec2::new(6.0,6.0),-0.8),
+                _=>(Color::srgb(0.45,0.42,0.30),Vec2::splat(6.0),-1.0),
+            };
+            commands.spawn((Sprite::from_color(color,size),Transform::from_xyz(f.position.x,f.position.y,z),FeatureSprite(f.id)));
+        }
+    }
+    for (_,tag,mut t) in &mut features {
         if let Some(f)=state.sim.features.iter().find(|f|f.id==tag.0){t.translation.x=f.position.x;t.translation.y=f.position.y;}
     }
     let existing_animals:Vec<u64>=animals.iter().map(|(_,a,_,_)|a.0).collect();
