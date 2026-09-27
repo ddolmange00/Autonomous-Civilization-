@@ -3,6 +3,8 @@ use crate::{
     agency::{ActionPrimitive, AgentMind, Needs, Traits},
     memory::{Episode, EpisodicMemory},
     awareness::{Awareness, SituationKind, SituationReport},
+    events::{WorldEvent, WorldEventKind},
+    causal_log::{CausalLog, CausalNode},
     world::Position,
 };
 
@@ -29,7 +31,7 @@ pub struct SandboxFeature {
 #[derive(Clone, Debug)]
 pub struct Sandbox {
     pub seed:u64, pub year:f64, pub residents:Vec<Resident>, pub monsters:Vec<SandboxMonster>,
-    pub features:Vec<SandboxFeature>, pub next_id:u64,
+    pub features:Vec<SandboxFeature>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
 }
 
 fn unit(seed:u64, stream:u64)->f32 {
@@ -86,7 +88,15 @@ impl Sandbox {
             features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,
                 position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0}); id+=1;
         }
-        Self{seed,year:0.0,residents,monsters:vec![],features,next_id:id}
+        Self{seed,year:0.0,residents,monsters:vec![],features,events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
+    }
+
+    pub fn inject_event(&mut self, kind:WorldEventKind, position:Position, radius:f32, intensity:f32, duration_days:f32)->u64 {
+        let id=self.next_id; self.next_id+=1;
+        let event=WorldEvent{id,kind,position,radius:radius.max(1.0),intensity:intensity.max(0.0),start_year:self.year,duration_years:duration_days.max(0.1) as f64/365.0};
+        self.events.push(event);
+        self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:format!("{:?} intensity {:.2}",kind,intensity)});
+        id
     }
 
     pub fn spawn_monster(&mut self) {
@@ -99,12 +109,30 @@ impl Sandbox {
     pub fn step(&mut self,days:f32) {
         self.year+=days as f64/365.0;
         let snapshot_monsters=self.monsters.clone();
+        let active_events:Vec<_>=self.events.iter().copied().filter(|e|e.active(self.year)).collect();
         let features=self.features.clone();
         for r in &mut self.residents {
             if r.health<=0.0 { continue; }
             r.mind.needs.hunger=(r.mind.needs.hunger+days*0.006).clamp(0.0,1.0);
             r.mind.needs.rest=(r.mind.needs.rest+days*0.002).clamp(0.0,1.0);
             let mut perceived=Vec::new();
+            for e in &active_events {
+                let influence=e.influence_at(r.position);
+                if influence>0.0 {
+                    if let Some(kind)=e.situation() {
+                        let confidence=(0.35+influence*0.5).clamp(0.1,1.0);
+                        r.awareness.observe(SituationReport{kind,source_id:Some(e.id),perceived_severity:influence,confidence,observed_year:self.year,location:[e.position.x,e.position.y]});
+                    }
+                    match e.kind {
+                        WorldEventKind::Fire=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.25*days).clamp(0.0,1.0);r.health=(r.health-influence*0.006*days).max(0.0);}
+                        WorldEventKind::Flood=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.18*days).clamp(0.0,1.0);}
+                        WorldEventKind::Earthquake=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.22*days).clamp(0.0,1.0);}
+                        WorldEventKind::Storm=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.12*days).clamp(0.0,1.0);}
+                        WorldEventKind::Drought=>{r.mind.needs.hunger=(r.mind.needs.hunger+influence*0.025*days).clamp(0.0,1.0);}
+                        _=>{}
+                    }
+                }
+            }
             for f in &features {
                 let d=dist(r.position,f.position);
                 if d<=85.0 {
@@ -131,6 +159,7 @@ impl Sandbox {
             scored.sort_by(|a,b|b.1.total_cmp(&a.1));
             r.top_scores=scored.iter().take(5).map(|(i,s)|ActionScore{action:affordances[*i].action,score:*s}).collect();
             let chosen=&affordances[scored[0].0]; r.current_action=chosen.action;
+            self.causal_log.push(self.year,CausalNode::Decision{resident_id:r.id,action:chosen.action,score:scored[0].1});
             let target=chosen.target.and_then(|id|{
                 features.iter().find(|f|f.id==id).map(|f|f.position)
                     .or_else(||snapshot_monsters.iter().find(|m|m.id==id).map(|m|m.position))
@@ -159,9 +188,11 @@ impl Sandbox {
                     let trust=(0.35+r.mind.traits.social_trust*0.6).clamp(0.0,1.0);
                     let distortion=signed(self.seed,r.id.wrapping_mul(700_001)+*source)*0.22;
                     r.awareness.hear(*report,trust,distortion,self.year);
+                    self.causal_log.push(self.year,CausalNode::Transmission{from:*source,to:r.id,label:format!("{:?} rumor",report.kind)});
                 }
             }
         }
+        self.events.retain(|e|e.active(self.year));
         for m in &mut self.monsters {
             if m.health<=0.0 {continue;}
             m.hunger=(m.hunger+days*0.004).clamp(0.0,1.0);
