@@ -11,7 +11,7 @@ use crate::{
     family::Kinship,
     relationships::SocialMemory,
     life_history::{LifeHistory,LifeStage,Sex},
-    social_dynamics::spend_time,
+    social_dynamics::{spend_time,partnership_affinity},
     generation::{annual_mortality_risk,conception_propensity,ReproductionContext},
     demography::{HeritableTraits,inherit},
     households::Household,
@@ -303,6 +303,7 @@ impl Sandbox {
                 }
             }
         }
+        self.step_social_generation(days);
         for r in &mut self.residents {
             if r.current_action==ActionPrimitive::Attack {
                 for m in &mut self.monsters {
@@ -313,4 +314,129 @@ impl Sandbox {
             }
         }
     }
+    fn step_social_generation(&mut self, days:f32) {
+        let year=self.year;
+        let initial_len=self.residents.len();
+
+        // Proximity creates familiarity; stable high-affinity relationships can become partnerships.
+        let mut new_partnerships:Vec<(usize,usize)>=Vec::new();
+        for i in 0..initial_len {
+            for j in (i+1)..initial_len {
+                let (left,right)=self.residents.split_at_mut(j);
+                let a=&mut left[i]; let b=&mut right[0];
+                if a.health<=0.0||b.health<=0.0||dist(a.position,b.position)>12.0 {continue;}
+                let at=a.mind.traits; let bt=b.mind.traits;
+                {
+                    let ra=a.life.social.relation_mut(b.id);
+                    spend_time(ra,days.min(1.0)*3.0,at,bt);
+                }
+                {
+                    let rb=b.life.social.relation_mut(a.id);
+                    spend_time(rb,days.min(1.0)*3.0,bt,at);
+                }
+                let adult_a=a.life.stage(year)==LifeStage::Adult;
+                let adult_b=b.life.stage(year)==LifeStage::Adult;
+                if adult_a&&adult_b&&!a.life.kinship.partners.contains(&b.id) {
+                    let rel=a.life.social.relations.get(&b.id).copied().unwrap_or_default();
+                    let affinity=partnership_affinity(rel,at,bt);
+                    let chance=(days/365.0*0.45*((affinity-0.72)/0.28).clamp(0.0,1.0)).clamp(0.0,0.05);
+                    let roll=unit(self.seed,a.id.wrapping_mul(1_000_003)^b.id^year.to_bits());
+                    if affinity>0.72&&roll<chance {new_partnerships.push((i,j));}
+                }
+            }
+        }
+        for (i,j) in new_partnerships {
+            let (left,right)=self.residents.split_at_mut(j);
+            let a=&mut left[i]; let b=&mut right[0];
+            if !a.life.kinship.partners.contains(&b.id){a.life.kinship.partners.push(b.id);}
+            if !b.life.kinship.partners.contains(&a.id){b.life.kinship.partners.push(a.id);}
+            match (a.life.kinship.household,b.life.kinship.household) {
+                (None,None)=>{
+                    let hid=self.next_id;self.next_id+=1;
+                    self.households.push(Household{id:hid,members:vec![a.id,b.id],home:Position{x:(a.position.x+b.position.x)*0.5,y:(a.position.y+b.position.y)*0.5},stored_food:80.0,shared_material:0.0,cohesion:0.55});
+                    a.life.kinship.household=Some(hid);b.life.kinship.household=Some(hid);
+                }
+                (Some(h),None)=>{b.life.kinship.household=Some(h);if let Some(hh)=self.households.iter_mut().find(|x|x.id==h){if !hh.members.contains(&b.id){hh.members.push(b.id);}}},
+                (None,Some(h))=>{a.life.kinship.household=Some(h);if let Some(hh)=self.households.iter_mut().find(|x|x.id==h){if !hh.members.contains(&a.id){hh.members.push(a.id);}}},
+                _=>{}
+            }
+            self.causal_log.push(year,CausalNode::Outcome{resident_id:Some(a.id),label:format!("partnership formed with {}",b.id),value:1.0});
+        }
+
+        // Children preferentially learn from parents/guardians when nearby.
+        let parent_teaching:Vec<_>=self.residents.iter().filter(|r|r.health>0.0)
+            .map(|r|(r.id,r.position,r.knowledge.clone(),r.life.social.relations.clone())).collect();
+        for child in &mut self.residents {
+            if child.health<=0.0 || !matches!(child.life.stage(year),LifeStage::Child|LifeStage::Adolescent){continue;}
+            for parent_id in child.life.kinship.parents.clone() {
+                if let Some((_,pos,knowledge,_))=parent_teaching.iter().find(|(id,_,_,_)|*id==parent_id) {
+                    if dist(child.position,*pos)<=18.0 {
+                        let distortion=signed(self.seed,child.id.wrapping_mul(77_777)^parent_id)*0.05;
+                        knowledge.transmit_to(&mut child.knowledge,0.92,distortion);
+                    }
+                }
+            }
+        }
+
+        // Build conception plans first, then mutate/push to avoid borrow conflicts.
+        let mut births:Vec<(usize,usize)>=Vec::new();
+        for i in 0..initial_len {
+            let mother=&self.residents[i];
+            if mother.health<=0.0||mother.life.sex!=Sex::Female||mother.life.stage(year)!=LifeStage::Adult {continue;}
+            if mother.life.last_birth_year.map(|y|year-y<1.5).unwrap_or(false){continue;}
+            let mut best:Option<(usize,f32)>=None;
+            for partner_id in &mother.life.kinship.partners {
+                let Some(j)=self.residents.iter().position(|r|r.id==*partner_id) else{continue;};
+                let partner=&self.residents[j];
+                if partner.health<=0.0||partner.life.sex!=Sex::Male||partner.life.stage(year)!=LifeStage::Adult||dist(mother.position,partner.position)>24.0{continue;}
+                let rel=mother.life.social.relations.get(partner_id).copied().unwrap_or_default();
+                let score=rel.trust*0.45+rel.affection*0.55;
+                if best.map(|(_,s)|score>s).unwrap_or(true){best=Some((j,score));}
+            }
+            let Some((j,_))=best else{continue;};
+            let rel=mother.life.social.relations.get(&self.residents[j].id).copied().unwrap_or_default();
+            let hh_pressure=mother.life.kinship.household.and_then(|h|self.households.iter().find(|x|x.id==h)).map(|h|h.pressure()).unwrap_or(0.35);
+            let prop=conception_propensity(ReproductionContext{stage:mother.life.stage(year),sex:mother.life.sex,health:mother.health,
+                hunger:mother.mind.needs.hunger,safety_need:mother.mind.needs.safety,care_trait:mother.mind.traits.empathy,
+                household_pressure:hh_pressure,partner_relation:rel});
+            let chance=(prop*days/365.0).clamp(0.0,0.02);
+            let roll=unit(self.seed,mother.id.wrapping_mul(31_337)^self.residents[j].id^year.to_bits());
+            if roll<chance {births.push((i,j));}
+        }
+
+        for (mi,fi) in births {
+            let mother=self.residents[mi].clone(); let father=self.residents[fi].clone();
+            let id=self.next_id;self.next_id+=1; let s=self.seed^id^year.to_bits();
+            let variation6=[signed(s,1),signed(s,2),signed(s,3),signed(s,4),signed(s,5),signed(s,6)];
+            let variation10=[signed(s,11),signed(s,12),signed(s,13),signed(s,14),signed(s,15),signed(s,16),signed(s,17),signed(s,18),signed(s,19),signed(s,20)];
+            let biological=inherit(mother.life.biological,father.life.biological,variation6);
+            let traits=inherit_personality(mother.mind.traits,father.mind.traits,variation10);
+            let household=mother.life.kinship.household.or(father.life.kinship.household);
+            let position=Position{x:(mother.position.x+father.position.x)*0.5+signed(s,21)*2.0,y:(mother.position.y+father.position.y)*0.5+signed(s,22)*2.0};
+            let mut knowledge=KnowledgeStore::default();
+            mother.knowledge.transmit_to(&mut knowledge,0.35,signed(s,23)*0.08);
+            father.knowledge.transmit_to(&mut knowledge,0.35,signed(s,24)*0.08);
+            self.residents.push(Resident{id,position,mind:AgentMind{traits,needs:Needs{hunger:0.15,safety:0.35,rest:0.35,belonging:0.65,status:0.0,curiosity:0.35,care:0.0},..Default::default()},
+                memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),
+                life:LifeHistory{birth_year:year,sex:if unit(s,25)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological,
+                    kinship:Kinship{parents:vec![mother.id,father.id],children:vec![],partners:vec![],household},social:SocialMemory::default()},knowledge});
+            if let Some(m)=self.residents.get_mut(mi){m.life.last_birth_year=Some(year);m.life.kinship.children.push(id);}
+            if let Some(f)=self.residents.get_mut(fi){f.life.kinship.children.push(id);}
+            if let Some(h)=household.and_then(|h|self.households.iter_mut().find(|x|x.id==h)){h.members.push(id);}
+            self.causal_log.push(year,CausalNode::Outcome{resident_id:Some(id),label:format!("born to {} and {}",mother.id,father.id),value:1.0});
+        }
+
+        // Aging/health mortality remains individual and stochastic.
+        for r in &mut self.residents {
+            if r.health<=0.0{continue;}
+            let annual=annual_mortality_risk(&r.life,year,r.health);
+            let chance=(annual*days/365.0).clamp(0.0,0.5);
+            let roll=unit(self.seed,r.id.wrapping_mul(8_388_593)^year.to_bits());
+            if roll<chance {
+                r.health=0.0;
+                self.causal_log.push(year,CausalNode::Outcome{resident_id:Some(r.id),label:format!("died at age {:.1}",r.life.age(year)),value:-1.0});
+            }
+        }
+    }
+
 }
