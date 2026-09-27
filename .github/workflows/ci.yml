@@ -1,9 +1,14 @@
 name: Rust simulation CI
 on:
   push:
-    branches: ["main", "feat/**"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
+
+concurrency:
+  group: rust-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
