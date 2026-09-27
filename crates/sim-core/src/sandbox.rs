@@ -13,6 +13,8 @@ use crate::{
     life_history::{LifeHistory,LifeStage,Sex},
     social_dynamics::{spend_time,partnership_affinity},
     generation::{annual_mortality_risk,conception_propensity,ReproductionContext},
+    social_affordances::{generate_social,SocialTarget},
+    development::{filter_affordances,mobility_factor},
     demography::{HeritableTraits,inherit},
     households::Household,
     life_history::inherit_personality,
@@ -180,10 +182,12 @@ impl Sandbox {
 
     pub fn step(&mut self,days:f32) {
         self.year+=days as f64/365.0;
+        let snapshot_residents=self.residents.clone();
         let snapshot_monsters=self.monsters.clone();
         let snapshot_animals=self.animals.clone();
         let active_events:Vec<_>=self.events.iter().copied().filter(|e|e.active(self.year)).collect();
         let features=self.features.clone();
+        let mut social_effects:Vec<(u64,u64,ActionPrimitive)>=Vec::new();
         for r in &mut self.residents {
             if r.health<=0.0 { continue; }
             r.mind.needs.hunger=(r.mind.needs.hunger+days*0.006).clamp(0.0,1.0);
@@ -226,7 +230,13 @@ impl Sandbox {
                         danger:(m.archetype.aggression*m.health*(0.5+m.archetype.body_mass_kg.sqrt()/60.0)).clamp(0.0,1.5),food_hint:0.0,material_hint:0.25,uncertainty:(d/140.0).clamp(0.05,0.75)});
                 }
             }
-            let affordances=generate(&perceived,LocalCapabilities{reach_m:12.0,cutting:0.05,digging:0.04,carrying:0.2,heat_tolerance:0.0});
+            let mut affordances=generate(&perceived,LocalCapabilities{reach_m:12.0,cutting:0.05,digging:0.04,carrying:0.2,heat_tolerance:0.0});
+            let social_targets:Vec<_>=snapshot_residents.iter().filter(|o|o.id!=r.id&&o.health>0.0&&dist(r.position,o.position)<=28.0).map(|o|SocialTarget{
+                id:o.id,distance_m:dist(r.position,o.position),stage:o.life.stage(self.year),health:o.health,hunger:o.mind.needs.hunger,safety_need:o.mind.needs.safety,
+                relation:r.life.social.relations.get(&o.id).copied().unwrap_or_default(),
+            }).collect();
+            affordances.extend(generate_social(&social_targets));
+            filter_affordances(r.life.stage(self.year),&mut affordances);
             if affordances.is_empty() { continue; }
             let mut scored:Vec<(usize,f32)>=affordances.iter().enumerate().map(|(i,a)|{
                 let mem=r.memory.recalled_value(a.action,self.year);
@@ -240,15 +250,20 @@ impl Sandbox {
             let target=chosen.target.and_then(|id|{
                 features.iter().find(|f|f.id==id).map(|f|f.position)
                     .or_else(||snapshot_monsters.iter().find(|m|m.id==id).map(|m|m.position))
+                    .or_else(||snapshot_residents.iter().find(|o|o.id==id).map(|o|o.position))
             });
+            let mobility=mobility_factor(r.life.stage(self.year));
             if let Some(t)=target {
                 match chosen.action {
-                    ActionPrimitive::Avoid|ActionPrimitive::Hide=>move_away(&mut r.position,t,days*1.4,&features),
-                    ActionPrimitive::Attack=>move_toward(&mut r.position,t,days*1.8,&features),
+                    ActionPrimitive::Avoid|ActionPrimitive::Hide=>move_away(&mut r.position,t,days*1.4*mobility,&features),
+                    ActionPrimitive::Attack=>move_toward(&mut r.position,t,days*1.8*mobility,&features),
                     ActionPrimitive::Gather|ActionPrimitive::Carry|ActionPrimitive::Observe|ActionPrimitive::Experiment|
-                    ActionPrimitive::Dig|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Bind=>move_toward(&mut r.position,t,days*0.7,&features),
+                    ActionPrimitive::Dig|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Bind=>move_toward(&mut r.position,t,days*0.7*mobility,&features),
                     _=>{}
                 }
+            }
+            if matches!(chosen.action,ActionPrimitive::Assist|ActionPrimitive::Communicate) {
+                if let Some(tid)=chosen.target {if snapshot_residents.iter().any(|o|o.id==tid){social_effects.push((r.id,tid,chosen.action));}}
             }
             let value=if chosen.action==ActionPrimitive::Avoid {chosen.expected.safety} else {chosen.expected.food+chosen.expected.knowledge+chosen.expected.status-chosen.expected.physical_risk};
             r.mind.learn_action(chosen.action,value,0.04);
@@ -266,6 +281,33 @@ impl Sandbox {
             r.memory.remember(Episode{year:self.year,action:chosen.action,target:chosen.target,value,surprise:chosen.uncertainty,
                 danger:chosen.expected.physical_risk,social_visibility:0.2});
         }
+        for (actor_id,target_id,action) in social_effects {
+            let Some(ai)=self.residents.iter().position(|r|r.id==actor_id) else{continue;};
+            let Some(ti)=self.residents.iter().position(|r|r.id==target_id) else{continue;};
+            if ai==ti{continue;}
+            let (actor,target)=if ai<ti {
+                let (l,r)=self.residents.split_at_mut(ti);(&mut l[ai],&mut r[0])
+            } else {
+                let (l,r)=self.residents.split_at_mut(ai);(&mut r[0],&mut l[ti])
+            };
+            if actor.health<=0.0||target.health<=0.0||dist(actor.position,target.position)>14.0{continue;}
+            match action {
+                ActionPrimitive::Assist=>{
+                    let care=0.008+actor.mind.traits.empathy*0.020;
+                    target.mind.needs.hunger=(target.mind.needs.hunger-care*days).max(0.0);
+                    target.mind.needs.safety=(target.mind.needs.safety-care*0.6*days).max(0.0);
+                    actor.life.social.observe_help(target.id,(care*10.0).clamp(0.0,1.0));
+                    target.life.social.observe_help(actor.id,(care*12.0).clamp(0.0,1.0));
+                }
+                ActionPrimitive::Communicate=>{
+                    let at=actor.mind.traits;let tt=target.mind.traits;
+                    spend_time(actor.life.social.relation_mut(target.id),days.min(1.0)*2.0,at,tt);
+                    spend_time(target.life.social.relation_mut(actor.id),days.min(1.0)*2.0,tt,at);
+                }
+                _=>{}
+            }
+        }
+
         // Local teaching: nearby residents can pass imperfect knowledge according to trust.
         let teachers:Vec<_>=self.residents.iter().filter(|r|r.health>0.0&&!r.knowledge.items.is_empty())
             .map(|r|(r.id,r.position,r.knowledge.clone())).collect();
