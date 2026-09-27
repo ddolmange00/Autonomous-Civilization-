@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{affordances::FeatureKind, awareness::SituationKind, sandbox::Sandbox};
+use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
@@ -68,6 +68,9 @@ fn controls(
     if keys.just_pressed(KeyCode::Space){state.paused=!state.paused;}
     if keys.just_pressed(KeyCode::F3){state.debug=!state.debug;}
     if keys.just_pressed(KeyCode::KeyM){state.sim.spawn_monster();}
+    if keys.just_pressed(KeyCode::KeyF){state.sim.inject_event(WorldEventKind::Fire,Position{x:-110.0,y:0.0},65.0,0.9,24.0);}
+    if keys.just_pressed(KeyCode::KeyG){state.sim.inject_event(WorldEventKind::Flood,Position{x:0.0,y:0.0},85.0,0.85,18.0);}
+    if keys.just_pressed(KeyCode::KeyQ){state.sim.inject_event(WorldEventKind::Earthquake,Position{x:-80.0,y:0.0},110.0,0.75,2.0);}
     if keys.just_pressed(KeyCode::KeyV){state.selected=Some(Selected::Settlement);}
     if keys.just_pressed(KeyCode::KeyR){
         state.seed=state.seed.wrapping_add(1); state.sim=Sandbox::new(state.seed); state.selected=None;
@@ -151,7 +154,7 @@ fn update_ui(
 ) {
     if let Ok(mut t)=hud.single_mut() {
         let alive=state.sim.residents.iter().filter(|r|r.health>0.0).count();
-        t.0=format!("SEED {}   YEAR {:.2}   RESIDENTS {}/{}   MONSTERS {}\nSPEED x{} {}   [1-5 speed] [Space pause] [M monster] [R new seed] [F3 debug]\n[WASD pan] [+/- zoom] [Click entity] [V settlement pulse]",
+        t.0=format!("SEED {}   YEAR {:.2}   RESIDENTS {}/{}   MONSTERS {}\nSPEED x{} {}   [1-5 speed] [Space pause] [M monster] [F fire] [G flood] [Q quake] [R seed] [F3 debug]\n[WASD pan] [+/- zoom] [Click entity] [V settlement pulse]",
             state.seed,state.sim.year,alive,state.sim.residents.len(),state.sim.monsters.iter().filter(|m|m.health>0.0).count(),
             state.speed as u32,if state.paused{"PAUSED"}else{""});
     }
