@@ -13,7 +13,9 @@ use crate::{
     life_history::{LifeHistory,LifeStage,Sex},
     social_dynamics::spend_time,
     generation::{annual_mortality_risk,conception_propensity,ReproductionContext},
-    demography::HeritableTraits,
+    demography::{HeritableTraits,inherit},
+    households::Household,
+    life_history::inherit_personality,
     causal_log::{CausalLog, CausalNode},
     world::Position,
 };
@@ -46,7 +48,7 @@ pub struct SandboxFeature {
 #[derive(Clone, Debug)]
 pub struct Sandbox {
     pub seed:u64, pub year:f64, pub residents:Vec<Resident>, pub animals:Vec<SandboxAnimal>, pub monsters:Vec<SandboxMonster>,
-    pub features:Vec<SandboxFeature>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
+    pub features:Vec<SandboxFeature>, pub households:Vec<Household>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
 }
 
 fn unit(seed:u64, stream:u64)->f32 {
@@ -85,7 +87,7 @@ impl Sandbox {
             residents.push(Resident{
                 id:i+1, position:Position{x:-120.0+signed(seed,i*20+13)*55.0,y:signed(seed,i*20+14)*90.0},
                 mind,memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,
-                current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:-18.0-unit(seed,i*20+15) as f64*28.0,sex:if unit(seed,i*20+22)<0.5{Sex::Female}else{Sex::Male},biological:HeritableTraits{stature:unit(seed,i*20+16),body_mass:unit(seed,i*20+17),cold_tolerance:unit(seed,i*20+18),heat_tolerance:unit(seed,i*20+19),pigmentation:unit(seed,i*20+20),disease_resistance:unit(seed,i*20+21)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),
+                current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:-18.0-unit(seed,i*20+15) as f64*28.0,sex:if unit(seed,i*20+22)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological:HeritableTraits{stature:unit(seed,i*20+16),body_mass:unit(seed,i*20+17),cold_tolerance:unit(seed,i*20+18),heat_tolerance:unit(seed,i*20+19),pigmentation:unit(seed,i*20+20),disease_resistance:unit(seed,i*20+21)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),
             });
         }
         let mut features=Vec::new(); let mut id=10_000u64;
@@ -103,7 +105,7 @@ impl Sandbox {
             features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,
                 position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0}); id+=1;
         }
-        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
+        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
     }
 
     pub fn spawn_resident_at(&mut self, position:Position) {
@@ -117,7 +119,7 @@ impl Sandbox {
             ..Default::default()
         };
         self.residents.push(Resident{id,position,mind,memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,
-            current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:self.year-18.0-unit(s,11) as f64*22.0,sex:if unit(s,18)<0.5{Sex::Female}else{Sex::Male},biological:HeritableTraits{stature:unit(s,12),body_mass:unit(s,13),cold_tolerance:unit(s,14),heat_tolerance:unit(s,15),pigmentation:unit(s,16),disease_resistance:unit(s,17)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),});
+            current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),life:LifeHistory{birth_year:self.year-18.0-unit(s,11) as f64*22.0,sex:if unit(s,18)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological:HeritableTraits{stature:unit(s,12),body_mass:unit(s,13),cold_tolerance:unit(s,14),heat_tolerance:unit(s,15),pigmentation:unit(s,16),disease_resistance:unit(s,17)},kinship:Kinship::default(),social:SocialMemory::default()},knowledge:KnowledgeStore::default(),});
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:"Resident spawned".into()});
     }
     pub fn spawn_animal_at(&mut self, position:Position) { self.spawn_animal_with(position,AnimalArchetype::default()); }
