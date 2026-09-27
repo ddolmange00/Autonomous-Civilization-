@@ -204,7 +204,7 @@ fn controls(
     if keys.just_pressed(KeyCode::Digit4){state.speed=100.0;}
     if keys.just_pressed(KeyCode::Digit5){state.speed=1000.0;}
     if keys.just_pressed(KeyCode::Space){state.paused=!state.paused;}
-    if keys.just_pressed(KeyCode::F3){state.debug=!state.debug;}
+    if keys.just_pressed(KeyCode::F3)&&!state.monster_lab{state.debug=!state.debug;}
     if keys.just_pressed(KeyCode::KeyI){state.tool=GodTool::Inspect;}
     if keys.just_pressed(KeyCode::KeyH){state.tool=GodTool::Resident;}
     if keys.just_pressed(KeyCode::KeyZ){state.tool=GodTool::Animal;}
@@ -213,7 +213,7 @@ fn controls(
     if keys.just_pressed(KeyCode::KeyN){state.tool=GodTool::Rain;}
     if keys.just_pressed(KeyCode::KeyX){state.tool=GodTool::Drought;}
     if keys.just_pressed(KeyCode::KeyM){state.tool=GodTool::Monster;}
-    if keys.just_pressed(KeyCode::KeyF){state.tool=GodTool::Fire;}
+    if keys.just_pressed(KeyCode::KeyF)&&!state.monster_lab{state.tool=GodTool::Fire;}
     if keys.just_pressed(KeyCode::KeyG){state.tool=GodTool::Flood;}
     if keys.just_pressed(KeyCode::KeyQ){state.tool=GodTool::Earthquake;}
     if keys.just_pressed(KeyCode::BracketLeft){state.tool_radius=(state.tool_radius-10.0).max(10.0);}
@@ -251,7 +251,7 @@ fn controls(
         if keys.just_pressed(KeyCode::KeyR){for y in 0..state.monster_blueprint.skin.height{for x in 0..state.monster_blueprint.skin.width{let on=((x as u64*17+y as u64*31+state.seed)%7)<3;if on{state.monster_blueprint.skin.set(x,y,PixelCell{filled:true,palette:1,emissive:false});}}}}
     }
     if keys.just_pressed(KeyCode::KeyV){state.selected=Some(Selected::Settlement);}
-    if keys.just_pressed(KeyCode::KeyR){
+    if keys.just_pressed(KeyCode::KeyR)&&!state.monster_lab{
         state.seed=state.seed.wrapping_add(1); state.sim=Sandbox::new(state.seed); state.selected=None;
         for e in &monsters { commands.entity(e).despawn(); }
     }
