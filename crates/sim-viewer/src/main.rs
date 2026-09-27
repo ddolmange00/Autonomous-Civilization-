@@ -10,6 +10,7 @@ use sim_core::{affordances::FeatureKind, awareness::SituationKind, events::World
 #[derive(Component)] struct InspectorText;
 #[derive(Component)] struct ToolText;
 #[derive(Component)] struct EventOverlay(u64);
+#[derive(Component)] struct ToolPreview;
 
 #[derive(Clone, Copy, Debug)]
 enum Selected { Resident(u64), Monster(u64), Settlement }
@@ -40,7 +41,7 @@ fn main() {
             ..default()
         }))
         .add_systems(Startup,setup)
-        .add_systems(Update,(controls,tick_sim,sync_world,world_click,update_ui))
+        .add_systems(Update,(controls,tick_sim,sync_world,tool_preview,world_click,update_ui))
         .run();
 }
 
@@ -67,6 +68,7 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
         Node{position_type:PositionType::Absolute,top:px(10),right:px(12),..default()},InspectorText));
     commands.spawn((Text::new(""),TextFont::from_font_size(15.0),TextColor(Color::srgb(0.96,0.90,0.72)),
         Node{position_type:PositionType::Absolute,bottom:px(14),left:percent(20),..default()},ToolText));
+    commands.spawn((Sprite::from_color(Color::srgba(0.95,0.90,0.65,0.10),Vec2::splat(140.0)),Transform::from_xyz(0.0,0.0,0.4),Visibility::Hidden,ToolPreview));
 }
 
 fn controls(
@@ -177,6 +179,33 @@ fn sync_world(
             sprite.color=if m.health<=0.0 {Color::srgb(0.20,0.08,0.07)} else {Color::srgb(0.72,0.16,0.13)};
         } else { commands.entity(e).despawn(); }
     }
+}
+
+fn tool_preview(
+    window:Query<&Window,With<PrimaryWindow>>,
+    camera:Query<(&Camera,&GlobalTransform),With<WorldCamera>>,
+    state:Res<ViewerState>,
+    mut preview:Query<(&mut Transform,&mut Sprite,&mut Visibility),With<ToolPreview>>,
+) {
+    let Ok(w)=window.single() else{return;}; let Some(cursor)=w.cursor_position() else{return;};
+    let Ok((cam,global))=camera.single() else{return;}; let Ok(world)=cam.viewport_to_world_2d(global,cursor) else{return;};
+    let Ok((mut t,mut sprite,mut vis))=preview.single_mut() else{return;};
+    if state.tool==GodTool::Inspect { *vis=Visibility::Hidden; return; }
+    *vis=Visibility::Visible; t.translation.x=world.x;t.translation.y=world.y;
+    let radius=match state.tool {GodTool::Resident|GodTool::Animal|GodTool::Monster=>12.0,GodTool::Vegetation|GodTool::Mineral=>32.0,_=>state.tool_radius};
+    sprite.custom_size=Some(Vec2::splat(radius*2.0));
+    sprite.color=match state.tool {
+        GodTool::Fire=>Color::srgba(0.95,0.25,0.08,0.13),
+        GodTool::Flood|GodTool::Rain=>Color::srgba(0.18,0.50,0.82,0.12),
+        GodTool::Drought=>Color::srgba(0.78,0.62,0.25,0.12),
+        GodTool::Earthquake=>Color::srgba(0.75,0.62,0.35,0.12),
+        GodTool::Monster=>Color::srgba(0.85,0.15,0.12,0.16),
+        GodTool::Resident=>Color::srgba(0.90,0.78,0.48,0.15),
+        GodTool::Animal=>Color::srgba(0.70,0.62,0.42,0.15),
+        GodTool::Vegetation=>Color::srgba(0.15,0.55,0.18,0.13),
+        GodTool::Mineral=>Color::srgba(0.55,0.48,0.35,0.15),
+        _=>Color::srgba(0.95,0.90,0.65,0.10),
+    };
 }
 
 fn world_click(
