@@ -355,9 +355,13 @@ impl Sandbox {
             if chosen.action==ActionPrimitive::Gather {
                 if let Some(hid)=r.life.kinship.household {
                     if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                        let storage:f32=snapshot_structures.iter().filter(|s|s.household_id==hid&&s.integrity>0.2)
+                            .map(|s|s.capabilities().storage).sum();
+                        let food_cap=80.0+storage*260.0;
+                        let material_cap=35.0+storage*180.0;
                         let material=chosen.target.and_then(|id|features.iter().find(|f|f.id==id)).map(|f|f.material).unwrap_or(0.0);
-                        h.stored_food=(h.stored_food+chosen.expected.food.max(0.0)*days*2.5).min(5000.0);
-                        h.shared_material=(h.shared_material+material.max(0.0)*days*0.8).min(5000.0);
+                        h.stored_food=(h.stored_food+chosen.expected.food.max(0.0)*days*2.5).min(food_cap);
+                        h.shared_material=(h.shared_material+material.max(0.0)*days*0.8).min(material_cap);
                     }
                 }
             }
@@ -374,7 +378,9 @@ impl Sandbox {
                     h.shared_material-=amount;self.projects[pi].material_committed+=amount;
                 }
             }
-            let work=work_value(action,skill,days.min(2.0));
+            let workspace=self.structures.iter().filter(|s|s.integrity>0.2&&dist(s.position,self.projects[pi].position)<28.0)
+                .map(|s|s.capabilities().workspace).fold(0.0_f32,f32::max);
+            let work=work_value(action,skill,days.min(2.0))*(1.0+workspace*0.35);
             let before=(self.projects[pi].progress/self.projects[pi].required_work.max(0.1)).clamp(0.0,1.0);
             self.projects[pi].progress+=work;
             let after=(self.projects[pi].progress/self.projects[pi].required_work.max(0.1)).clamp(0.0,1.0);
