@@ -196,6 +196,7 @@ impl Sandbox {
         let features=self.features.clone();
         let mut social_effects:Vec<(u64,u64,ActionPrimitive)>=Vec::new();
         let mut construction_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
+        let mut maintenance_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
         for r in &mut self.residents {
             if r.health<=0.0 { continue; }
             r.mind.needs.hunger=(r.mind.needs.hunger+days*0.006).clamp(0.0,1.0);
@@ -306,9 +307,14 @@ impl Sandbox {
                 if snapshot_projects.iter().any(|p|p.id==pid) && matches!(chosen.action,ActionPrimitive::Bind|ActionPrimitive::Raise|ActionPrimitive::Dig|ActionPrimitive::Carry|ActionPrimitive::Experiment) {
                     construction_work.push((pid,r.id,chosen.action,r.practice.skill(chosen.action)));
                 }
-                if snapshot_structures.iter().any(|s|s.id==pid) && chosen.action==ActionPrimitive::Hide {
-                    r.mind.needs.safety=(r.mind.needs.safety-0.04*days).max(0.0);
-                    r.mind.needs.rest=(r.mind.needs.rest-0.025*days).max(0.0);
+                if snapshot_structures.iter().any(|s|s.id==pid) {
+                    if chosen.action==ActionPrimitive::Hide {
+                        r.mind.needs.safety=(r.mind.needs.safety-0.04*days).max(0.0);
+                        r.mind.needs.rest=(r.mind.needs.rest-0.025*days).max(0.0);
+                    }
+                    if matches!(chosen.action,ActionPrimitive::Bind|ActionPrimitive::Raise) {
+                        maintenance_work.push((pid,r.id,chosen.action,r.practice.skill(chosen.action)));
+                    }
                 }
             }
             if matches!(chosen.action,ActionPrimitive::Assist|ActionPrimitive::Communicate) {
@@ -346,6 +352,23 @@ impl Sandbox {
             self.projects[pi].progress+=work;
             if work>0.0 {
                 self.causal_log.push(self.year,CausalNode::Outcome{resident_id:Some(resident_id),label:format!("worked on construction {}",project_id),value:work});
+            }
+        }
+
+        for (structure_id,resident_id,action,skill) in maintenance_work {
+            let Some(si)=self.structures.iter().position(|s|s.id==structure_id) else{continue;};
+            if self.structures[si].integrity<=0.2 {continue;}
+            let hid=self.structures[si].household_id;
+            let work=work_value(action,skill,days.min(2.0));
+            let material_need=work*0.22;
+            let used=if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                let x=material_need.min(h.shared_material);h.shared_material-=x;x
+            } else {0.0};
+            if used>0.0 {
+                let material_ratio=(used/material_need.max(0.001)).clamp(0.0,1.0);
+                let repair=work*0.008*(0.35+0.65*material_ratio);
+                self.structures[si].integrity=(self.structures[si].integrity+repair).min(1.0);
+                self.causal_log.push(self.year,CausalNode::Outcome{resident_id:Some(resident_id),label:format!("maintained structure {}",structure_id),value:repair});
             }
         }
 
@@ -712,7 +735,7 @@ impl Sandbox {
         for h in &self.households {
             if h.members.is_empty(){continue;}
             if self.projects.iter().any(|p|p.household_id==h.id){continue;}
-            if self.structures.iter().any(|s|s.household_id==h.id&&dist(s.position,h.home)<24.0){continue;}
+            if self.structures.iter().any(|s|s.household_id==h.id&&s.integrity>0.2&&dist(s.position,h.home)<24.0){continue;}
             let members:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(h.id)).collect();
             if members.is_empty(){continue;}
             let safety=members.iter().map(|r|r.mind.needs.safety).sum::<f32>()/members.len() as f32;
