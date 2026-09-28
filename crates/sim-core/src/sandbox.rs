@@ -22,7 +22,7 @@ use crate::{
     settlement_detection::detect_settlements,
     settlement_identity::{cluster_member_ids,SettlementIdentity},
     culture::CulturalField,
-    built_environment::{BuiltStructure,ConstructionProject,integrity_from,proposal_strength,seed_shelter_design,work_value},
+    built_environment::{BuiltStructure,ConstructionProject,evolve_shelter_design,integrity_from,proposal_strength,seed_shelter_design,work_value},
     causal_log::{CausalLog, CausalNode},
     world::Position,
 };
@@ -751,7 +751,13 @@ impl Sandbox {
         for (hid,pos,skill) in proposals {
             let id=self.next_id;self.next_id+=1;
             let available=self.households.iter().find(|h|h.id==hid).map(|h|h.shared_material).unwrap_or(0.0);
-            let design=seed_shelter_design(id,None,0,skill,available);
+            let parent=self.structures.iter().filter(|s|s.household_id==hid).max_by(|a,b|a.completed_year.total_cmp(&b.completed_year));
+            let design=if let Some(parent)=parent {
+                let variation=signed(self.seed,id.wrapping_mul(13_337)^self.year.to_bits());
+                evolve_shelter_design(&parent.design,id,skill,available,variation)
+            } else {
+                seed_shelter_design(id,None,0,skill,available)
+            };
             let required_material=(16.0+design.length_m*design.width_m*1.6).clamp(14.0,45.0);
             let required_work=(18.0+design.length_m*design.width_m*2.2).clamp(18.0,60.0);
             let initial=if let Some(h)=self.households.iter_mut().find(|h|h.id==hid){
