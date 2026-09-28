@@ -11,6 +11,7 @@ pub struct ConstructionProject {
     pub required_work:f32,
     pub material_committed:f32,
     pub material_required:f32,
+    pub started_year:f64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
