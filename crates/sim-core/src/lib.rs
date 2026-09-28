@@ -1,3 +1,4 @@
+pub mod built_environment;
 pub mod settlement_identity;
 pub mod specialization;
 pub mod development;
