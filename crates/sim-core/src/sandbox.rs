@@ -22,7 +22,7 @@ use crate::{
     settlement_detection::detect_settlements,
     settlement_identity::{cluster_member_ids,SettlementIdentity},
     culture::CulturalField,
-    built_environment::{BuiltStructure,ConstructionProject,evolve_shelter_design,integrity_from,proposal_strength,seed_shelter_design,work_value},
+    built_environment::{BuiltStructure,ConstructionProject,evolve_shelter_design,integrity_from,proposal_strength,seed_shelter_design,seed_wall_design,work_value},
     causal_log::{CausalLog, CausalNode},
     world::Position,
     language::Lexicon,
@@ -30,6 +30,12 @@ use crate::{
     exchange::{exchange_amount, surplus, TradeRecord},
     institutions::{coordination_bonus, update_institutions, Institution},
     narrative::{misattribution, reinforce, ritual_relief, Narrative},
+    warfare::{assemble_force, disbanded, form_warbands, melee_from_repertoire, resolve_battle, update_morale, Warband},
+    logistics::{carry_capacity, supply_drain},
+    seafaring::{can_embark, craft_from_designs, crosses_water, Craft},
+    invention::{seed_float_design, seed_tool_design, test_prototype},
+    ground_truth::{canonical_registry, GroundTruthRegistry},
+    design::{DesignGenome, Function},
 };
 
 #[derive(Clone, Debug)]
@@ -64,6 +70,8 @@ pub struct Sandbox {
     pub features:Vec<SandboxFeature>, pub households:Vec<Household>, pub settlements:Vec<SettlementIdentity>, pub projects:Vec<ConstructionProject>, pub structures:Vec<BuiltStructure>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
     pub contacts:Vec<Contact>, pub institutions:Vec<Institution>, pub narratives:Vec<Narrative>,
     pub trades:Vec<TradeRecord>, pub trade_count:u64, pub theft_count:u64,
+    pub warbands:Vec<Warband>, pub battles:u64, pub monsters_repelled:u64,
+    pub ground_truth:GroundTruthRegistry, pub draft_count:u64,
 }
 
 fn unit(seed:u64, stream:u64)->f32 {
@@ -142,7 +150,8 @@ impl Sandbox {
                 position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0,quantity:1.0,capacity:1.0,regeneration_per_day:0.0}); id+=1;
         }
         Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],projects:vec![],structures:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048,total_written:0},next_id:id,
-            contacts:vec![],institutions:vec![],narratives:vec![],trades:vec![],trade_count:0,theft_count:0}
+            contacts:vec![],institutions:vec![],narratives:vec![],trades:vec![],trade_count:0,theft_count:0,
+            warbands:vec![],battles:0,monsters_repelled:0,ground_truth:canonical_registry(),draft_count:0}
     }
 
     pub fn spawn_resident_at(&mut self, position:Position) {
@@ -228,6 +237,7 @@ impl Sandbox {
         let snapshot_animals=self.animals.clone();
         let active_events:Vec<_>=self.events.iter().copied().filter(|e|e.active(self.year)).collect();
         let features=self.features.clone();
+        let timber_truth=self.timber_truth();
         let mut social_effects:Vec<(u64,u64,ActionPrimitive)>=Vec::new();
         let mut construction_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
         let mut maintenance_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
@@ -298,9 +308,12 @@ impl Sandbox {
                 let d=dist(r.position,m.position);
                 if m.health>0.0 && d<=110.0 {
                     let confidence=(1.0-d/140.0).clamp(0.1,1.0);
-                    r.awareness.observe(SituationReport{kind:SituationKind::CreatureThreat,source_id:Some(m.id),perceived_severity:(m.archetype.aggression*m.health*(0.5+m.archetype.body_mass_kg.sqrt()/60.0)).clamp(0.0,1.5),confidence,observed_year:self.year,location:[m.position.x,m.position.y]});
+                    let severity=(m.archetype.aggression*m.health*(0.5+m.archetype.body_mass_kg.sqrt()/60.0)).clamp(0.0,1.5);
+                    r.awareness.observe(SituationReport{kind:SituationKind::CreatureThreat,source_id:Some(m.id),perceived_severity:severity,confidence,observed_year:self.year,location:[m.position.x,m.position.y]});
+                    // A felt predator is a safety need, not just information.
+                    r.mind.needs.safety=(r.mind.needs.safety+severity*confidence*0.05*days).clamp(0.0,1.0);
                     perceived.push(PerceivedFeature{id:m.id,kind:FeatureKind::Creature,distance_m:d,
-                        danger:(m.archetype.aggression*m.health*(0.5+m.archetype.body_mass_kg.sqrt()/60.0)).clamp(0.0,1.5),food_hint:0.0,material_hint:0.25,uncertainty:(d/140.0).clamp(0.05,0.75)});
+                        danger:severity,food_hint:0.0,material_hint:0.25,uncertainty:(d/140.0).clamp(0.05,0.75)});
                 }
             }
             let stage=r.life.stage(self.year);
@@ -319,6 +332,30 @@ impl Sandbox {
             affordances.extend(generate_social(&social_targets));
             for a in &mut affordances {
                 if let Some(tid)=a.target {
+                    if a.action==ActionPrimitive::Attack {
+                        if let Some(mp)=snapshot_monsters.iter().find(|m|m.id==tid).map(|m|m.position) {
+                            // Muster: an armed crowd facing one predator may stand together.
+                            // Lone victims still flee; collective defense needs numbers.
+                            let muster=snapshot_residents.iter()
+                                .filter(|o|o.id!=r.id&&o.health>0.0&&dist(o.position,mp)<40.0).count();
+                            a.expected.safety+=0.10*(muster.min(5) as f32);
+                            // Armed defenders stand: repertoire weapons raise resolve, lower felt risk.
+                            let melee=r.life.kinship.household
+                                .and_then(|hid|self.households.iter().find(|h|h.id==hid))
+                                .map(|h|timber_truth.map(|t|melee_from_repertoire(&h.designs,&t)).unwrap_or(0.0))
+                                .unwrap_or(0.0).clamp(0.0,1.5);
+                            a.expected.status+=0.30*melee;
+                            a.expected.physical_risk*=1.0-0.45*melee.clamp(0.0,1.0);
+                            // Nest defense: a predator at the doorstep threatens kin and stores.
+                            let home_close=r.life.kinship.household
+                                .and_then(|hid|self.households.iter().find(|h|h.id==hid))
+                                .map(|h|dist(h.home,mp)<45.0).unwrap_or(false);
+                            if home_close {
+                                a.expected.safety+=0.20;
+                                a.expected.care+=0.12;
+                            }
+                        }
+                    }
                     if let Some(p)=snapshot_projects.iter().find(|p|p.id==tid) {
                         if r.life.kinship.household==Some(p.household_id) {
                             // Own-household construction satisfies belonging and material need.
@@ -642,11 +679,20 @@ impl Sandbox {
                 if d<8.0 && m.hunger*0.55+m.archetype.aggression*0.45>0.45 {
                     m.motion=MotionState::Attack;
                     let damage=(0.008+0.020*m.archetype.aggression+0.000012*m.archetype.body_mass_kg)*days;
-                    self.residents[idx].health=(self.residents[idx].health-damage).max(0.0);
+                    // Hiding inside intact shelter mitigates monster damage.
+                    let victim_hide=self.residents[idx].current_action==ActionPrimitive::Hide;
+                    let cover=if victim_hide {
+                        self.structures.iter()
+                            .filter(|s|s.integrity>0.2&&dist(self.residents[idx].position,s.position)<10.0)
+                            .map(|s|s.integrity*0.65).fold(0.0_f32,f32::max)
+                    } else {0.0};
+                    self.residents[idx].health=(self.residents[idx].health-damage*(1.0-cover)).max(0.0);
                     m.hunger=(m.hunger-damage*1.5).max(0.0);
                 } else if d<180.0 && m.hunger>0.35 {
                     m.motion=if m.archetype.speed>0.9{MotionState::Run}else{MotionState::Walk};
-                    move_toward(&mut m.position,target,days*(0.45+m.archetype.speed+m.archetype.aggression*0.35),&features);
+                    // Committed lunge: close hungry predators sprint faster than fleeing prey.
+                    let sprint=if d<25.0&&m.hunger>0.5{2.2}else{1.0};
+                    move_toward(&mut m.position,target,days*(0.60+m.archetype.speed*1.8+m.archetype.aggression*0.5)*sprint,&features);
                 } else {
                     m.position.x+=signed(self.seed,self.year.to_bits()+m.id)*days*0.4;
                     m.position.y+=signed(self.seed,self.year.to_bits()+m.id+1)*days*0.4;
@@ -659,6 +705,8 @@ impl Sandbox {
         self.step_language_contact();
         self.step_trade_theft(days);
         self.step_institutions_narratives();
+        self.step_experimentation(days);
+        self.step_warfare(days);
         // Hunting: killing an animal yields meat for the hunter's household, or the hunter.
         let mut hunt_kills:Vec<(u64,Option<u64>,u64,f32)>=Vec::new();
         for r in &mut self.residents {
@@ -732,7 +780,7 @@ impl Sandbox {
             match (a.life.kinship.household,b.life.kinship.household) {
                 (None,None)=>{
                     let hid=self.next_id;self.next_id+=1;
-                    self.households.push(Household{id:hid,members:vec![a.id,b.id],home:Position{x:(a.position.x+b.position.x)*0.5,y:(a.position.y+b.position.y)*0.5},stored_food:80.0,shared_material:0.0,cohesion:0.55,migration_goal:None,construction_drive:0.0});
+                    self.households.push(Household{id:hid,members:vec![a.id,b.id],home:Position{x:(a.position.x+b.position.x)*0.5,y:(a.position.y+b.position.y)*0.5},stored_food:80.0,shared_material:0.0,cohesion:0.55,migration_goal:None,construction_drive:0.0,designs:vec![]});
                     a.life.kinship.household=Some(hid);b.life.kinship.household=Some(hid);
                 }
                 (Some(h),None)=>{b.life.kinship.household=Some(h);if let Some(hh)=self.households.iter_mut().find(|x|x.id==h){if !hh.members.contains(&b.id){hh.members.push(b.id);}}},
@@ -866,9 +914,20 @@ impl Sandbox {
         }
 
         let goals:Vec<(u64,Position)>=self.households.iter().filter_map(|h|h.migration_goal.map(|g|(h.id,g))).collect();
+        let waters:Vec<(f32,f32,f32)>=self.features.iter()
+            .filter(|f|f.kind==FeatureKind::DeepWater).map(|f|(f.position.x,f.position.y,17.0)).collect();
         for (hid,goal) in goals {
+            // Overseas colonization: water crossings need real craft, never assumed.
+            let craft=self.household_craft(hid);
             for r in self.residents.iter_mut().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)) {
-                move_toward(&mut r.position,goal,days*(0.20+r.mind.traits.persistence*0.22),&self.features);
+                let rate=days*(0.20+r.mind.traits.persistence*0.22);
+                let sails=crosses_water((r.position.x,r.position.y),(goal.x,goal.y),&waters)
+                    .map(|sev|can_embark(craft,sev)).unwrap_or(false);
+                if sails {
+                    move_toward(&mut r.position,goal,rate,&[]);
+                } else {
+                    move_toward(&mut r.position,goal,rate,&self.features);
+                }
             }
             let arrived=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)).all(|r|dist(r.position,goal)<12.0);
             if arrived {
@@ -982,6 +1041,11 @@ impl Sandbox {
             } else {
                 seed_shelter_design(id,None,0,skill,available)
             };
+            // Real threat pressure diverts a proposal into a defensive wall.
+            let threatened=members.iter().filter(|r|r.awareness.confidence(crate::awareness::SituationKind::CreatureThreat)>0.5).count();
+            let design=if threatened.max(1) as f32/members.len().max(1) as f32>0.3&&threatened>=2 {
+                seed_wall_design(id,skill,available)
+            } else {design};
             let required_material=(16.0+design.length_m*design.width_m*1.6).clamp(14.0,45.0);
             let required_work=(10.0+design.length_m*design.width_m*1.2).clamp(10.0,32.0);
             let initial=if let Some(h)=self.households.iter_mut().find(|h|h.id==hid){
@@ -1050,7 +1114,9 @@ impl Sandbox {
                 if dist(a.1,b.1)>150.0{continue;}
                 // Markets meet occasionally, not every step.
                 if stream_unit(seed,a.0.wrapping_mul(6_469_693).wrapping_add(b.0).wrapping_add(year.to_bits()))>=0.15{continue;}
-                for (stock_a,stock_b,reserve,carry,food) in [(a.2,b.2,20.0,8.0,true),(a.3,b.3,15.0,6.0,false)] {
+                // Caravans haul what ordinary bodies can carry.
+                let caravan=carry_capacity(0.5,0.3);
+                for (stock_a,stock_b,reserve,carry,food) in [(a.2,b.2,20.0,caravan.food,true),(a.3,b.3,15.0,caravan.material,false)] {
                     for (giver,taker) in [(i,j),(j,i)] {
                         let (gs,ts)=if giver==i{(stock_a,stock_b)}else{(stock_b,stock_a)};
                         let gm=if giver==i{snaps[i].4}else{snaps[j].4};
@@ -1107,8 +1173,12 @@ impl Sandbox {
             let Some((hid,_))=best else{continue;};
             let roll=stream_unit(seed,rid.wrapping_mul(3_824_908_129).wrapping_add(year.to_bits()));
             if roll>=0.03*days.min(2.0){continue;}
+            // Even theft respects hauling limits.
+            let cap=self.residents.iter().find(|r|r.id==rid)
+                .map(|r|carry_capacity(r.life.biological.stature,r.practice.skill(ActionPrimitive::Carry)).food)
+                .unwrap_or(3.0);
             if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
-                let take=2.0f32.min(h.stored_food); h.stored_food-=take;
+                let take=2.0f32.min(h.stored_food).min(cap); h.stored_food-=take;
                 if let Some(r)=self.residents.iter_mut().find(|r|r.id==rid) {
                     r.mind.needs.hunger=(r.mind.needs.hunger-take*0.45).max(0.0);
                 }
@@ -1189,6 +1259,194 @@ impl Sandbox {
                 }.to_string();
                 let nmembers=self.settlements.iter().find(|s|s.id==sid).map(|s|s.members.len() as u32).unwrap_or(0);
                 reinforce(&mut self.narratives,sid,label,mass,nmembers,year);
+            }
+        }
+    }
+
+    fn timber_truth(&self)->Option<crate::materials::MaterialProperties> {
+        self.ground_truth.get(1).map(|m|m.properties)
+    }
+
+    fn stone_truth(&self)->Option<crate::materials::MaterialProperties> {
+        self.ground_truth.get(2).map(|m|m.properties)
+    }
+
+    /// Prototyping: experimenting residents with material may draft tool or
+    /// float designs. Physics tests them; successes enter the household
+    /// repertoire, failures are logged as evidence. No water-raft scripts:
+    /// drafts are probabilistic, costly, and can fail.
+    fn step_experimentation(&mut self, days:f32) {
+        let year=self.year; let seed=self.seed;
+        let timber=self.timber_truth(); let stone=self.stone_truth();
+        let experimenters:Vec<(u64,Position,Option<u64>,f32)>=self.residents.iter()
+            .filter(|r|r.health>0.0&&r.current_action==ActionPrimitive::Experiment)
+            .map(|r|(r.id,r.position,r.life.kinship.household,r.practice.skill(ActionPrimitive::Experiment))).collect();
+        for (rid,pos,household,skill) in experimenters {
+            // Nearest workable feature decides what gets prototyped.
+            let mut best:Option<(FeatureKind,f32)>=None;
+            for f in &self.features {
+                if !matches!(f.kind,FeatureKind::DeepWater|FeatureKind::LooseMaterial|FeatureKind::RockFace){continue;}
+                let d=dist(pos,f.position);
+                if d<40.0&&best.map(|(_,bd)|d<bd).unwrap_or(true){best=Some((f.kind,d));}
+            }
+            let Some((kind,_))=best else{continue;};
+            let Some(hid)=household else{continue;};
+            let stock=self.households.iter().find(|h|h.id==hid).map(|h|h.shared_material).unwrap_or(0.0);
+            if stock<1.0{continue;}
+            let roll=stream_unit(seed,rid.wrapping_mul(7_345_345).wrapping_add(year.to_bits()));
+            if roll>=(0.005+skill*0.015)*days.min(2.0){continue;}
+            let id=self.next_id; self.next_id+=1;
+            let variation=stream_unit(seed,id.wrapping_mul(999983))*2.0-1.0;
+            let (genome,truth,function_label)=match kind {
+                FeatureKind::DeepWater=>match timber {
+                    Some(t)=>(seed_float_design(id,skill,variation),t,"float"),
+                    None=>continue,
+                },
+                _=>match stone {
+                    Some(t)=>{
+                        let f=match stream_unit(seed,id.wrapping_mul(13)) {
+                            x if x<0.34=>Function::Cut,
+                            x if x<0.67=>Function::Pierce,
+                            _=>Function::Impact,
+                        };
+                        (seed_tool_design(id,f,skill,variation),t,"tool")
+                    }
+                    None=>continue,
+                },
+            };
+            if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                h.shared_material=(h.shared_material-2.0).max(0.0);
+            }
+            let draft=test_prototype(&genome,truth,skill);
+            if draft.result.success {
+                self.draft_count+=1;
+                if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                    h.remember_design(genome);
+                }
+                if let Some(r)=self.residents.iter_mut().find(|r|r.id==rid) {
+                    r.knowledge.learn(format!("design::{function_label}"),draft.result.actual,0.5);
+                }
+                self.causal_log.push(year,CausalNode::Outcome{resident_id:Some(rid),
+                    label:format!("household {hid} devised a working {function_label} (surprise {:.2})",draft.result.surprise),value:draft.result.actual});
+            } else if draft.result.surprise>0.4 {
+                self.causal_log.push(year,CausalNode::Outcome{resident_id:Some(rid),
+                    label:format!("failed {function_label} prototype taught household {hid}"),value:-draft.result.surprise});
+            }
+        }
+    }
+
+    fn household_craft(&self,hid:u64)->Option<Craft> {
+        let timber=self.timber_truth()?;
+        let repertoire:Vec<DesignGenome>=self.households.iter().find(|h|h.id==hid)
+            .map(|h|h.designs.clone()).unwrap_or_default();
+        // Household repertoire plus settlement-built float designs members have seen.
+        let mut designs=repertoire;
+        for s in &self.structures {
+            designs.push(s.design.clone());
+        }
+        craft_from_designs(designs.iter(),&timber)
+    }
+
+    /// Warbands form, fight with invented weapons, remember outcomes.
+    /// Cowardly math: outmatched bands break instead of dying pointlessly.
+    fn step_warfare(&mut self, days:f32) {
+        let year=self.year; let seed=self.seed;
+        let attackers:Vec<(u64,f32,f32,Option<u64>)>=self.residents.iter()
+            .filter(|r|r.health>0.0&&r.current_action==ActionPrimitive::Attack)
+            .map(|r|(r.id,r.position.x,r.position.y,r.life.kinship.household)).collect();
+        let live_monsters:Vec<(u64,f32,f32)>=self.monsters.iter()
+            .filter(|m|m.health>0.0).map(|m|(m.id,m.position.x,m.position.y)).collect();
+        // Re-group every step; morale persists by membership overlap.
+        let groups=form_warbands(&attackers,&live_monsters,60.0);
+        let mut next_bands:Vec<Warband>=Vec::new();
+        for (members,mid) in groups {
+            let sid=self.settlements.iter()
+                .filter(|s|members.iter().any(|id|s.members.contains(id)))
+                .max_by_key(|s|members.iter().filter(|id|s.members.contains(id)).count())
+                .map(|s|s.id);
+            let reuse=self.warbands.iter().find(|b|b.target_monster==Some(mid)
+                &&b.members.iter().any(|id|members.contains(id)));
+            let mut band=match reuse {
+                Some(old)=>{
+                    let mut b=old.clone(); b.members=members.clone(); b.target_monster=Some(mid);
+                    if sid.is_some(){b.settlement_id=sid;}
+                    b
+                }
+                None=>{
+                    let id=self.next_id; self.next_id+=1;
+                    let bonus=sid.map(|s|coordination_bonus(&self.institutions,s,ActionPrimitive::Attack)).unwrap_or(0.0);
+                    Warband{id,settlement_id:sid,members:members.clone(),morale:(0.5+bonus).min(1.0),target_monster:Some(mid),battles:0}
+                }
+            };
+            // Resolve pitched battles on some steps, not every heartbeat.
+            let roll=stream_unit(seed,band.id.wrapping_mul(5_647_847).wrapping_add(year.to_bits()));
+            if roll<0.30*days.min(2.0) {
+                let melee=sid.and_then(|s|{
+                    let designs:Vec<DesignGenome>=self.households.iter()
+                        .filter(|h|self.settlements.iter().find(|x|x.id==s)
+                            .map(|x|dist(h.home,x.center)<55.0).unwrap_or(false))
+                        .flat_map(|h|h.designs.clone()).collect();
+                    self.timber_truth().map(|t|melee_from_repertoire(&designs,&t))
+                }).unwrap_or(0.0);
+                let cx=members.iter().filter_map(|id|self.residents.iter().find(|r|r.id==*id))
+                    .map(|r|r.position.x).sum::<f32>()/members.len().max(1) as f32;
+                let cy=members.iter().filter_map(|id|self.residents.iter().find(|r|r.id==*id))
+                    .map(|r|r.position.y).sum::<f32>()/members.len().max(1) as f32;
+                let armor=0.10+0.30*self.structures.iter()
+                    .filter(|s|s.integrity>0.2&&dist(s.position,Position{x:cx,y:cy})<40.0)
+                    .map(|s|s.capabilities().defense).fold(0.0_f32,f32::max);
+                let force=assemble_force(&band,melee,armor);
+                if let Some(mon)=self.monsters.iter().find(|m|m.id==mid) {
+                    let species=crate::monsters::MonsterSpecies{id:0,
+                        body_mass_kg:mon.archetype.body_mass_kg,speed_m_s:mon.archetype.speed*20.0,
+                        armor:mon.archetype.armor,bite_force:mon.archetype.aggression,
+                        aggression:mon.archetype.aggression,intelligence:mon.archetype.intelligence,
+                        reproduction_rate:mon.archetype.reproduction,food_need_kg_day:mon.archetype.body_mass_kg*0.02};
+                    let outcome=resolve_battle(force,&species,1.0);
+                    let per_member=outcome.human_losses/members.len().max(1) as f32;
+                    for id in &members {
+                        if let Some(r)=self.residents.iter_mut().find(|r|r.id==*id) {
+                            r.health=(r.health-per_member).max(0.0);
+                        }
+                    }
+                    if let Some(m)=self.monsters.iter_mut().find(|m|m.id==mid) {
+                        m.health=(m.health-outcome.monster_losses*0.5).max(0.0);
+                        if outcome.monsters_repulsed {
+                            m.position.x+=(m.position.x-cx).signum()*20.0;
+                            m.position.y+=(m.position.y-cy).signum()*20.0;
+                            self.monsters_repelled+=1;
+                        }
+                    }
+                    for s in self.structures.iter_mut().filter(|s|dist(s.position,Position{x:cx,y:cy})<30.0) {
+                        s.integrity=(s.integrity-outcome.settlement_damage*0.5).max(0.0);
+                    }
+                    update_morale(&mut band,&outcome);
+                    self.battles+=1;
+                    if outcome.monsters_repulsed {
+                        self.causal_log.push(year,CausalNode::Outcome{resident_id:None,
+                            label:format!("warband {} repulsed monster {mid}",band.id),value:0.8});
+                    }
+                }
+            }
+            if !disbanded(&band){next_bands.push(band);}
+        }
+        self.warbands=next_bands;
+        // Campaign supply: fighting far from home eats extra.
+        for b in &self.warbands {
+            let home=b.settlement_id.and_then(|sid|self.settlements.iter().find(|s|s.id==sid).map(|s|s.center));
+            for id in &b.members {
+                let (pos,hhome)=match self.residents.iter().find(|r|r.id==*id) {
+                    Some(r)=>(r.position,r.life.kinship.household.and_then(|hid|self.households.iter().find(|h|h.id==hid).map(|h|h.home))),
+                    None=>continue,
+                };
+                let anchor=home.or(hhome).unwrap_or(pos);
+                let d=dist(pos,anchor);
+                let drain=supply_drain(d,days);
+                if drain>0.0 {
+                    if let Some(r)=self.residents.iter_mut().find(|r|r.id==*id) {
+                        r.mind.needs.hunger=(r.mind.needs.hunger+drain).max(0.0).min(1.0);
+                    }
+                }
             }
         }
     }

@@ -29,6 +29,10 @@ struct EmergenceSummary {
     lexicon_divergence:f32,
     institutions:usize,
     narratives:usize,
+    warbands:usize,
+    battles:u64,
+    repelled:u64,
+    drafts:u64,
 }
 
 fn culture_divergence(sim:&Sandbox)->f32 {
@@ -91,6 +95,10 @@ fn summarize(sim:&Sandbox)->EmergenceSummary {
         lexicon_divergence:lexicon_divergence(sim),
         institutions:sim.institutions.len(),
         narratives:sim.narratives.len(),
+        warbands:sim.warbands.len(),
+        battles:sim.battles,
+        repelled:sim.monsters_repelled,
+        drafts:sim.draft_count,
     }
 }
 
@@ -111,12 +119,13 @@ fn main() {
     let base_seed=args.get(3).and_then(|x|x.parse::<u64>().ok()).unwrap_or(847_291);
     let step_days=args.get(4).and_then(|x|x.parse::<f32>().ok()).unwrap_or(2.0).clamp(0.25,10.0);
 
-    println!("seed\tyear\talive\ttotal_residents\thouseholds\tactive_settlements\tsettlement_splits\tstructures\tprojects\tmax_design_gen\tknowledge_items\tcausal_records\tcausal_total\tculture_divergence\tmean_structure_integrity\tvegetation_remaining\tmineral_remaining\tmean_project_work\tmean_project_material\tmean_project_age\ttrades\tthefts\tcontacts\tmean_trust\tlexicon_divergence\tinstitutions\tnarratives");
+    println!("seed\tyear\talive\ttotal_residents\thouseholds\tactive_settlements\tsettlement_splits\tstructures\tprojects\tmax_design_gen\tknowledge_items\tcausal_records\tcausal_total\tculture_divergence\tmean_structure_integrity\tvegetation_remaining\tmineral_remaining\tmean_project_work\tmean_project_material\tmean_project_age\ttrades\tthefts\tcontacts\tmean_trust\tlexicon_divergence\tinstitutions\tnarratives\twarbands\tbattles\trepelled\tdrafts");
     for i in 0..seed_count {
         let s=run_emergence(base_seed+i,years,step_days);
-        println!("{}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.2}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{}\t{}",
+        println!("{}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.2}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}",
             s.seed,s.year,s.alive,s.residents_total,s.households,s.active_settlements,s.settlement_lineages,
             s.structures,s.projects,s.max_design_generation,s.knowledge_items,s.causal_records,s.causal_total,s.culture_divergence,s.mean_structure_integrity,s.vegetation_remaining,s.mineral_remaining,s.mean_project_work,s.mean_project_material,s.mean_project_age,
-            s.trades,s.thefts,s.contacts,s.mean_trust,s.lexicon_divergence,s.institutions,s.narratives);
+            s.trades,s.thefts,s.contacts,s.mean_trust,s.lexicon_divergence,s.institutions,s.narratives,
+            s.warbands,s.battles,s.repelled,s.drafts);
     }
 }

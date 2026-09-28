@@ -46,6 +46,8 @@ pub fn generate(features:&[PerceivedFeature], cap:LocalCapabilities)->Vec<Afford
                 FeatureKind::Creature=>{
                     push(&mut out,ActionPrimitive::Avoid,f,ExpectedOutcome{safety:f.danger*0.85,effort:0.04,..Default::default()});
                     push(&mut out,ActionPrimitive::Communicate,f,ExpectedOutcome{belonging:0.08,care:0.08,safety:f.danger*0.10,..Default::default()});
+                    // Marching to a distant threat is possible, not just cowering.
+                    push(&mut out,ActionPrimitive::Attack,f,ExpectedOutcome{safety:f.danger*0.15,status:0.10,physical_risk:f.danger,effort:0.10,..Default::default()});
                 }
                 FeatureKind::DeepWater=> {
                     push(&mut out,ActionPrimitive::Experiment,f,ExpectedOutcome{knowledge:0.20,physical_risk:f.danger*0.15,..Default::default()});
@@ -90,7 +92,8 @@ pub fn generate(features:&[PerceivedFeature], cap:LocalCapabilities)->Vec<Afford
             FeatureKind::Creature => {
                 push(&mut out,ActionPrimitive::Avoid,f,ExpectedOutcome{safety:f.danger,..Default::default()});
                 push(&mut out,ActionPrimitive::Communicate,f,ExpectedOutcome{belonging:0.12,care:0.10,safety:f.danger*0.15,..Default::default()});
-                push(&mut out,ActionPrimitive::Attack,f,ExpectedOutcome{status:0.18,physical_risk:f.danger,knowledge:0.05,..Default::default()});
+                // Driving off a predator protects safety and kin, at real risk.
+                push(&mut out,ActionPrimitive::Attack,f,ExpectedOutcome{safety:f.danger*0.30,care:0.10,status:0.18,physical_risk:f.danger,knowledge:0.05,..Default::default()});
                 push(&mut out,ActionPrimitive::Observe,f,ExpectedOutcome{knowledge:0.25,physical_risk:f.danger*0.2,..Default::default()});
             }
             FeatureKind::Shelter | FeatureKind::ConstructedObject => {

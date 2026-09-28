@@ -92,6 +92,22 @@ pub fn evolve_shelter_design(parent:&DesignGenome,id:u64,skill:f32,material:f32,
     }
 }
 
+/// Wall-like defensive design: thick, well-bound, low and straight.
+/// Proposed only under real threat pressure, never by script.
+pub fn seed_wall_design(id:u64,skill:f32,material:f32)->DesignGenome {
+    let s=skill.clamp(0.0,1.0);
+    DesignGenome{
+        id,parent:None,generation:0,function:Function::Shelter,
+        length_m:4.0+2.0*s,
+        width_m:0.6+0.4*s,
+        thickness_m:0.35+0.20*s,
+        curvature:0.0,
+        edge_fraction:0.0,
+        binding_quality:(0.35+0.60*s).clamp(0.0,1.0),
+        material_fraction:vec![(2,material.max(0.1))],
+    }
+}
+
 pub fn work_value(action:ActionPrimitive,skill:f32,days:f32)->f32 {
     let base=match action {
         ActionPrimitive::Bind=>1.0,
@@ -128,5 +144,10 @@ mod tests {
     }
     #[test] fn practiced_work_advances_faster() {
         assert!(work_value(ActionPrimitive::Raise,0.9,1.0)>work_value(ActionPrimitive::Raise,0.1,1.0));
+    }
+    #[test] fn walls_defend_better_than_huts() {
+        let hut=seed_shelter_design(1,None,0,0.7,25.0);
+        let wall=seed_wall_design(2,0.7,25.0);
+        assert!(capabilities_from(&wall,0.8).defense>capabilities_from(&hut,0.8).defense);
     }
 }

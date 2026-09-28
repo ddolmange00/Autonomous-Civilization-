@@ -58,5 +58,9 @@ pub mod exchange;
 pub mod diplomacy;
 pub mod institutions;
 pub mod narrative;
+pub mod warfare;
+pub mod logistics;
+pub mod seafaring;
+pub mod invention;
 
 pub use world::{Civilization, World};
