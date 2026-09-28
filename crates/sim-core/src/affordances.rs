@@ -38,14 +38,14 @@ pub fn generate(features:&[PerceivedFeature], cap:LocalCapabilities)->Vec<Afford
         if !reachable { continue; }
         match f.kind {
             FeatureKind::Vegetation => {
-                push(&mut out,ActionPrimitive::Gather,f,ExpectedOutcome{food:f.food_hint,knowledge:0.05,effort:0.12,..Default::default()});
+                push(&mut out,ActionPrimitive::Gather,f,ExpectedOutcome{food:f.food_hint,material:f.material_hint*0.35,knowledge:0.05,effort:0.12,..Default::default()});
                 push(&mut out,ActionPrimitive::Cut,f,ExpectedOutcome{knowledge:0.08,status:0.02,physical_risk:0.08/(0.2+cap.cutting),effort:0.32/(0.2+cap.cutting),..Default::default()});
                 push(&mut out,ActionPrimitive::Bind,f,ExpectedOutcome{knowledge:0.14,effort:0.18,..Default::default()});
             }
             FeatureKind::LooseMaterial => {
-                push(&mut out,ActionPrimitive::Gather,f,ExpectedOutcome{knowledge:0.05,status:0.02,effort:0.12,..Default::default()});
-                if cap.carrying>0.05 { push(&mut out,ActionPrimitive::Carry,f,ExpectedOutcome{effort:0.18/(0.2+cap.carrying),..Default::default()}); }
-                push(&mut out,ActionPrimitive::Strike,f,ExpectedOutcome{knowledge:0.12,physical_risk:0.06,effort:0.15,..Default::default()});
+                push(&mut out,ActionPrimitive::Gather,f,ExpectedOutcome{material:f.material_hint,knowledge:0.05,status:0.02,effort:0.12,..Default::default()});
+                if cap.carrying>0.05 { push(&mut out,ActionPrimitive::Carry,f,ExpectedOutcome{material:f.material_hint*0.35,effort:0.18/(0.2+cap.carrying),..Default::default()}); }
+                push(&mut out,ActionPrimitive::Strike,f,ExpectedOutcome{material:f.material_hint*0.20,knowledge:0.12,physical_risk:0.06,effort:0.15,..Default::default()});
             }
             FeatureKind::Soil => {
                 push(&mut out,ActionPrimitive::Dig,f,ExpectedOutcome{knowledge:0.10,effort:0.28/(0.2+cap.digging),..Default::default()});
