@@ -6,6 +6,8 @@ use sim_core::{causal_log::CausalNode,affordances::FeatureKind, awareness::Situa
 #[derive(Component)] struct MonsterSprite(u64);
 #[derive(Component)] struct MonsterPixel{ monster_id:u64,x:u8,y:u8,width:u8,height:u8,base_x:f32,base_y:f32 }
 #[derive(Component)] struct AnimalSprite(u64);
+#[derive(Component)] struct ProjectSprite(u64);
+#[derive(Component)] struct StructureSprite(u64);
 #[derive(Component)] struct FeatureSprite(u64);
 #[derive(Component)] struct HudText;
 #[derive(Component)] struct InspectorText;
@@ -30,7 +32,7 @@ impl GodTool { fn category(self)->ToolCategory { match self {
 } } }
 
 #[derive(Clone, Copy, Debug)]
-enum Selected { Resident(u64), Animal(u64), Monster(u64), Settlement }
+enum Selected { Resident(u64), Animal(u64), Monster(u64), Project(u64), Structure(u64), Settlement }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum GodTool { Inspect, Resident, Animal, Monster, Vegetation, Mineral, Rain, Drought, Fire, Flood, Earthquake }
@@ -286,6 +288,8 @@ fn sync_world(
     mut animals:Query<(Entity,&AnimalSprite,&mut Transform,&mut Sprite)>,
     mut monster_pixels:Query<(&MonsterPixel,&mut Transform)>,
     mut features:Query<(Entity,&FeatureSprite,&mut Transform)>,
+    mut projects:Query<(Entity,&ProjectSprite,&mut Transform,&mut Sprite)>,
+    mut structures:Query<(Entity,&StructureSprite,&mut Transform,&mut Sprite)>,
     overlays:Query<(Entity,&EventOverlay)>,
 ) {
     let existing_residents:Vec<u64>=residents.iter().map(|(_,r,_,_)|r.0).collect();
@@ -325,6 +329,37 @@ fn sync_world(
             sprite.color=if a.health<=0.0 {Color::srgb(0.20,0.16,0.12)} else {Color::srgb(0.70,0.62,0.42)};
         } else {commands.entity(e).despawn();}
     }
+    let existing_projects:Vec<u64>=projects.iter().map(|(_,p,_,_)|p.0).collect();
+    for p in &state.sim.projects {
+        if !existing_projects.contains(&p.id) {
+            let ratio=(p.progress/p.required_work.max(0.1)).clamp(0.0,1.0);
+            commands.spawn((Sprite::from_color(Color::srgba(0.72,0.50,0.24,0.45+ratio*0.35),Vec2::new(12.0+ratio*7.0,8.0+ratio*5.0)),
+                Transform::from_xyz(p.position.x,p.position.y,0.95),ProjectSprite(p.id),WorldDynamic));
+        }
+    }
+    for (e,tag,mut t,mut sprite) in &mut projects {
+        if let Some(p)=state.sim.projects.iter().find(|p|p.id==tag.0) {
+            t.translation.x=p.position.x;t.translation.y=p.position.y;
+            let ratio=(p.progress/p.required_work.max(0.1)).clamp(0.0,1.0);
+            sprite.custom_size=Some(Vec2::new(12.0+ratio*7.0,8.0+ratio*5.0));
+            sprite.color=Color::srgba(0.72,0.50,0.24,0.45+ratio*0.35);
+        } else {commands.entity(e).despawn();}
+    }
+
+    let existing_structures:Vec<u64>=structures.iter().map(|(_,s,_,_)|s.0).collect();
+    for s in &state.sim.structures {
+        if !existing_structures.contains(&s.id) {
+            commands.spawn((Sprite::from_color(Color::srgb(0.52+0.25*s.integrity,0.42+0.16*s.integrity,0.25),Vec2::new(20.0,14.0)),
+                Transform::from_xyz(s.position.x,s.position.y,0.98),StructureSprite(s.id),WorldDynamic));
+        }
+    }
+    for (e,tag,mut t,mut sprite) in &mut structures {
+        if let Some(s)=state.sim.structures.iter().find(|s|s.id==tag.0) {
+            t.translation.x=s.position.x;t.translation.y=s.position.y;
+            sprite.color=Color::srgb(0.52+0.25*s.integrity,0.42+0.16*s.integrity,0.25);
+        } else {commands.entity(e).despawn();}
+    }
+
     let existing:Vec<u64>=monsters.iter().map(|(_,m,_,_)|m.0).collect();
     for m in &state.sim.monsters {
         if !existing.contains(&m.id) {
@@ -407,6 +442,8 @@ fn world_click(
             let threshold=18.0*cam_t.scale.x; let mut best:(f32,Option<Selected>)=(threshold,None);
             for r in &state.sim.residents {let d=world.distance(Vec2::new(r.position.x,r.position.y));if d<best.0{best=(d,Some(Selected::Resident(r.id)));}}
             for a in &state.sim.animals {let d=world.distance(Vec2::new(a.position.x,a.position.y));if d<best.0{best=(d,Some(Selected::Animal(a.id)));}}
+            for p in &state.sim.projects {let d=world.distance(Vec2::new(p.position.x,p.position.y));if d<best.0{best=(d,Some(Selected::Project(p.id)));}}
+            for s in &state.sim.structures {let d=world.distance(Vec2::new(s.position.x,s.position.y));if d<best.0{best=(d,Some(Selected::Structure(s.id)));}}
             for m in &state.sim.monsters {let d=world.distance(Vec2::new(m.position.x,m.position.y));if d<best.0{best=(d,Some(Selected::Monster(m.id)));}}
             state.selected=best.1;
         }
@@ -480,6 +517,17 @@ fn update_ui(
             Some(Selected::Monster(id))=>state.sim.monsters.iter().find(|m|m.id==id).map(|m|
                 format!("MONSTER #{}\nHP {:.0}%  hunger {:.2}\nMASS {:.0}kg speed {:.2}\naggr {:.2} armor {:.2} intel {:.2}\nposition {:.0}, {:.0}",m.id,m.health*100.0,m.hunger,m.archetype.body_mass_kg,m.archetype.speed,m.archetype.aggression,m.archetype.armor,m.archetype.intelligence,m.position.x,m.position.y)
             ).unwrap_or_else(||"monster no longer exists".into()),
+            Some(Selected::Project(id))=>state.sim.projects.iter().find(|p|p.id==id).map(|p|
+                format!("CONSTRUCTION #{}\nhousehold #{}\nwork {:.0}%  material {:.0}%\nsize {:.1} × {:.1}m  binding {:.2}\nposition {:.0}, {:.0}",
+                    p.id,p.household_id,(p.progress/p.required_work.max(0.1)*100.0).clamp(0.0,100.0),
+                    (p.material_committed/p.material_required.max(0.1)*100.0).clamp(0.0,100.0),
+                    p.design.length_m,p.design.width_m,p.design.binding_quality,p.position.x,p.position.y)
+            ).unwrap_or_else(||"construction no longer exists".into()),
+            Some(Selected::Structure(id))=>state.sim.structures.iter().find(|s|s.id==id).map(|s|
+                format!("STRUCTURE #{}\nhousehold #{}\nintegrity {:.0}%\ncompleted Y{:.1}\nmaterial {:.1}\nsize {:.1} × {:.1}m\nposition {:.0}, {:.0}",
+                    s.id,s.household_id,s.integrity*100.0,s.completed_year,s.material_invested,s.design.length_m,s.design.width_m,s.position.x,s.position.y)
+            ).unwrap_or_else(||"structure no longer exists".into()),
+
             Some(Selected::Settlement)=>{
                 let alive=state.sim.residents.iter().filter(|r|r.health>0.0).count();
                 let mut s=format!("SETTLEMENT PULSE\nPopulation {}  Households {}  Villages {}\n\n",alive,state.sim.households.len(),state.sim.settlements.iter().filter(|x|!x.members.is_empty()).count());
