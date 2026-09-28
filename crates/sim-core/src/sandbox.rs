@@ -101,7 +101,7 @@ impl Sandbox {
                     novelty_seeking:unit(seed,i*20+8), social_trust:unit(seed,i*20+9),
                     planning_horizon:unit(seed,i*20+10),
                 },
-                needs:Needs{hunger:0.25+unit(seed,i*20+11)*0.25,safety:0.2,rest:0.15,belonging:0.3,status:0.2,curiosity:0.2+unit(seed,i*20+12)*0.5,care:0.25},
+                needs:Needs{hunger:0.25+unit(seed,i*20+11)*0.25,safety:0.2,rest:0.15,belonging:0.3,status:0.2,curiosity:0.2+unit(seed,i*20+12)*0.5,care:0.25,resources:0.20},
                 ..Default::default()
             };
             residents.push(Resident{
@@ -116,7 +116,14 @@ impl Sandbox {
             features.push(SandboxFeature{id,kind:FeatureKind::Vegetation,
                 position:Position{x:-220.0+unit(seed,500+i)*440.0,y:-160.0+unit(seed,700+i)*320.0},
                 danger:0.02,food:0.12+unit(seed,900+i)*0.25,material:0.5,
-                quantity:capacity*(0.55+unit(seed,960+i)*0.40),capacity,regeneration_per_day:0.018+unit(seed,980+i)*0.018}); id+=1;
+                quantity:capacity*(0.55+unit(seed,960+i)*0.40),capacity,regeneration_per_day:0.0025+unit(seed,980+i)*0.0035}); id+=1;
+        }
+        for i in 0..16u64 {
+            let capacity=10.0+unit(seed,1010+i)*28.0;
+            features.push(SandboxFeature{id,kind:FeatureKind::LooseMaterial,
+                position:Position{x:-220.0+unit(seed,1030+i)*440.0,y:-160.0+unit(seed,1050+i)*320.0},
+                danger:0.01,food:0.0,material:0.55+unit(seed,1070+i)*0.40,
+                quantity:capacity,capacity,regeneration_per_day:0.0}); id+=1;
         }
         for i in 0..18u64 {
             features.push(SandboxFeature{id,kind:FeatureKind::RockFace,
@@ -137,7 +144,7 @@ impl Sandbox {
             traits:Traits{threat_sensitivity:unit(s,1),aggression:unit(s,2),curiosity:unit(s,3),empathy:unit(s,4),
                 conformity:unit(s,5),persistence:unit(s,6),risk_tolerance:unit(s,7),novelty_seeking:unit(s,8),
                 social_trust:unit(s,9),planning_horizon:unit(s,10)},
-            needs:Needs{hunger:0.25,safety:0.2,rest:0.15,belonging:0.3,status:0.2,curiosity:0.35,care:0.25},
+            needs:Needs{hunger:0.25,safety:0.2,rest:0.15,belonging:0.3,status:0.2,curiosity:0.35,care:0.25,resources:0.20},
             ..Default::default()
         };
         self.residents.push(Resident{id,position,mind,memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,
@@ -157,7 +164,7 @@ impl Sandbox {
             let capacity=18.0+unit(self.seed,id*7+4)*26.0;
             self.features.push(SandboxFeature{id,kind:FeatureKind::Vegetation,position:Position{x:position.x+a.cos()*r,y:position.y+a.sin()*r},
                 danger:0.02,food:0.12+unit(self.seed,id*3+2)*0.25,material:0.5,
-                quantity:capacity*0.80,capacity,regeneration_per_day:0.018+unit(self.seed,id*7+5)*0.018});
+                quantity:capacity*0.80,capacity,regeneration_per_day:0.0025+unit(self.seed,id*7+5)*0.0035});
         }
     }
     pub fn deposit_minerals_at(&mut self, position:Position, count:u32) {
@@ -209,6 +216,12 @@ impl Sandbox {
             if r.health<=0.0 { continue; }
             r.mind.needs.hunger=(r.mind.needs.hunger+days*0.006).clamp(0.0,1.0);
             r.mind.needs.rest=(r.mind.needs.rest+days*0.002).clamp(0.0,1.0);
+            r.mind.needs.resources=if let Some(hid)=r.life.kinship.household {
+                let stock=self.households.iter().find(|h|h.id==hid).map(|h|h.shared_material).unwrap_or(0.0);
+                let target=self.projects.iter().find(|p|p.household_id==hid)
+                    .map(|p|(p.material_required-p.material_committed).max(12.0)).unwrap_or(24.0);
+                (1.0-stock/target.max(1.0)).clamp(0.0,1.0)
+            } else {0.12};
             let mut perceived=Vec::new();
             let shelter_protection=if r.current_action==ActionPrimitive::Hide {
                 snapshot_structures.iter().filter(|s|s.integrity>0.2&&dist(r.position,s.position)<10.0)
@@ -347,7 +360,10 @@ impl Sandbox {
             if matches!(chosen.action,ActionPrimitive::Assist|ActionPrimitive::Communicate) {
                 if let Some(tid)=chosen.target {if snapshot_residents.iter().any(|o|o.id==tid){social_effects.push((r.id,tid,chosen.action));}}
             }
-            let value=if chosen.action==ActionPrimitive::Avoid {chosen.expected.safety} else {chosen.expected.food+chosen.expected.knowledge+chosen.expected.status-chosen.expected.physical_risk};
+            let value=if chosen.action==ActionPrimitive::Avoid {chosen.expected.safety} else {
+                chosen.expected.food+chosen.expected.knowledge+chosen.expected.status+
+                chosen.expected.material*r.mind.needs.resources-chosen.expected.physical_risk
+            };
             r.mind.learn_action(chosen.action,value,0.04);
             r.practice.practice(chosen.action,value,days,self.year);
             if matches!(chosen.action,ActionPrimitive::Observe|ActionPrimitive::Experiment|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Dig) {
@@ -671,7 +687,7 @@ impl Sandbox {
             let position=Position{x:(mother.position.x+father.position.x)*0.5+signed(s,21)*2.0,y:(mother.position.y+father.position.y)*0.5+signed(s,22)*2.0};
             // Newborns do not inherit cultural knowledge. It is acquired later through observation and teaching.
             let knowledge=KnowledgeStore::default();
-            self.residents.push(Resident{id,position,mind:AgentMind{traits,needs:Needs{hunger:0.15,safety:0.35,rest:0.35,belonging:0.65,status:0.0,curiosity:0.35,care:0.0},..Default::default()},
+            self.residents.push(Resident{id,position,mind:AgentMind{traits,needs:Needs{hunger:0.15,safety:0.35,rest:0.35,belonging:0.65,status:0.0,curiosity:0.35,care:0.0,resources:0.10},..Default::default()},
                 memory:EpisodicMemory{episodes:vec![],capacity:64},health:1.0,current_action:ActionPrimitive::Observe,top_scores:vec![],awareness:Awareness::default(),
                 life:LifeHistory{birth_year:year,sex:if unit(s,25)<0.5{Sex::Female}else{Sex::Male},last_birth_year:None,biological,
                     kinship:Kinship{parents:vec![mother.id,father.id],children:vec![],partners:vec![],household},social:SocialMemory::default()},knowledge,practice:PracticeProfile::default()});
@@ -821,9 +837,9 @@ impl Sandbox {
                 r.practice.skill(ActionPrimitive::Bind).max(r.practice.skill(ActionPrimitive::Raise)).max(r.practice.skill(ActionPrimitive::Dig))
             }).sum::<f32>()/members.len() as f32;
             let strength=proposal_strength(safety,rest,skill,h.shared_material);
-            let chance=(strength*days/365.0*1.4).clamp(0.0,0.03);
+            let chance=(strength*days/365.0*2.8).clamp(0.0,0.05);
             let roll=unit(self.seed,h.id.wrapping_mul(5_000_011)^self.year.to_bits());
-            if strength>0.12&&roll<chance {proposals.push((h.id,h.home,skill));}
+            if strength>0.05&&roll<chance {proposals.push((h.id,h.home,skill));}
         }
         for (hid,pos,skill) in proposals {
             let id=self.next_id;self.next_id+=1;
