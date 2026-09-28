@@ -53,5 +53,10 @@ pub mod physics_laws;
 pub mod scenario;
 pub mod traversal;
 pub mod world;
+pub mod language;
+pub mod exchange;
+pub mod diplomacy;
+pub mod institutions;
+pub mod narrative;
 
 pub use world::{Civilization, World};

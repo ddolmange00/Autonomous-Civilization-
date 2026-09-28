@@ -1,4 +1,4 @@
-use sim_core::{affordances::FeatureKind,sandbox::Sandbox};
+use sim_core::{affordances::FeatureKind,diplomacy::mean_trust,language::Lexicon,sandbox::Sandbox};
 
 #[derive(Debug)]
 struct EmergenceSummary {
@@ -22,6 +22,13 @@ struct EmergenceSummary {
     mean_project_work:f32,
     mean_project_material:f32,
     mean_project_age:f32,
+    trades:u64,
+    thefts:u64,
+    contacts:usize,
+    mean_trust:f32,
+    lexicon_divergence:f32,
+    institutions:usize,
+    narratives:usize,
 }
 
 fn culture_divergence(sim:&Sandbox)->f32 {
@@ -36,6 +43,17 @@ fn culture_divergence(sim:&Sandbox)->f32 {
         pairs+=1;
     }}
     sum/(pairs.max(1) as f32*5.0)
+}
+
+fn lexicon_divergence(sim:&Sandbox)->f32 {
+    let active:Vec<_>=sim.settlements.iter().filter(|s|!s.members.is_empty()).collect();
+    if active.len()<2{return 0.0;}
+    let mut sum=0.0;let mut pairs=0u32;
+    for i in 0..active.len(){for j in (i+1)..active.len(){
+        sum+=Lexicon::divergence(&active[i].lexicon,&active[j].lexicon);
+        pairs+=1;
+    }}
+    sum/pairs.max(1) as f32
 }
 
 fn summarize(sim:&Sandbox)->EmergenceSummary {
@@ -66,6 +84,13 @@ fn summarize(sim:&Sandbox)->EmergenceSummary {
         mean_project_work:if sim.projects.is_empty(){0.0}else{sim.projects.iter().map(|p|(p.progress/p.required_work.max(0.001)).clamp(0.0,1.0)).sum::<f32>()/sim.projects.len() as f32},
         mean_project_material:if sim.projects.is_empty(){0.0}else{sim.projects.iter().map(|p|(p.material_committed/p.material_required.max(0.001)).clamp(0.0,1.0)).sum::<f32>()/sim.projects.len() as f32},
         mean_project_age:if sim.projects.is_empty(){0.0}else{sim.projects.iter().map(|p|(sim.year-p.started_year).max(0.0) as f32).sum::<f32>()/sim.projects.len() as f32},
+        trades:sim.trade_count,
+        thefts:sim.theft_count,
+        contacts:sim.contacts.len(),
+        mean_trust:mean_trust(&sim.contacts),
+        lexicon_divergence:lexicon_divergence(sim),
+        institutions:sim.institutions.len(),
+        narratives:sim.narratives.len(),
     }
 }
 
@@ -86,11 +111,12 @@ fn main() {
     let base_seed=args.get(3).and_then(|x|x.parse::<u64>().ok()).unwrap_or(847_291);
     let step_days=args.get(4).and_then(|x|x.parse::<f32>().ok()).unwrap_or(2.0).clamp(0.25,10.0);
 
-    println!("seed\tyear\talive\ttotal_residents\thouseholds\tactive_settlements\tsettlement_splits\tstructures\tprojects\tmax_design_gen\tknowledge_items\tcausal_records\tcausal_total\tculture_divergence\tmean_structure_integrity\tvegetation_remaining\tmineral_remaining\tmean_project_work\tmean_project_material\tmean_project_age");
+    println!("seed\tyear\talive\ttotal_residents\thouseholds\tactive_settlements\tsettlement_splits\tstructures\tprojects\tmax_design_gen\tknowledge_items\tcausal_records\tcausal_total\tculture_divergence\tmean_structure_integrity\tvegetation_remaining\tmineral_remaining\tmean_project_work\tmean_project_material\tmean_project_age\ttrades\tthefts\tcontacts\tmean_trust\tlexicon_divergence\tinstitutions\tnarratives");
     for i in 0..seed_count {
         let s=run_emergence(base_seed+i,years,step_days);
-        println!("{}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.2}",
+        println!("{}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.2}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{}\t{}",
             s.seed,s.year,s.alive,s.residents_total,s.households,s.active_settlements,s.settlement_lineages,
-            s.structures,s.projects,s.max_design_generation,s.knowledge_items,s.causal_records,s.causal_total,s.culture_divergence,s.mean_structure_integrity,s.vegetation_remaining,s.mineral_remaining,s.mean_project_work,s.mean_project_material,s.mean_project_age);
+            s.structures,s.projects,s.max_design_generation,s.knowledge_items,s.causal_records,s.causal_total,s.culture_divergence,s.mean_structure_integrity,s.vegetation_remaining,s.mineral_remaining,s.mean_project_work,s.mean_project_material,s.mean_project_age,
+            s.trades,s.thefts,s.contacts,s.mean_trust,s.lexicon_divergence,s.institutions,s.narratives);
     }
 }

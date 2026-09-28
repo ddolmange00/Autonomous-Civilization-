@@ -1,4 +1,4 @@
-use crate::{agency::ActionPrimitive,culture::{CulturalField,EmergentProfile},settlement_detection::SettlementCluster,world::Position};
+use crate::{agency::ActionPrimitive,culture::{CulturalField,EmergentProfile},language::Lexicon,settlement_detection::SettlementCluster,world::Position};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -11,6 +11,7 @@ pub struct SettlementIdentity {
     pub parent_id:Option<u64>,
     pub members:Vec<u64>,
     pub culture:CulturalField,
+    pub lexicon:Lexicon,
     pub shared_food:f32,
     pub shared_material:f32,
     pub knowledge_items:usize,

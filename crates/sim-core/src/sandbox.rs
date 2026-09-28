@@ -25,6 +25,11 @@ use crate::{
     built_environment::{BuiltStructure,ConstructionProject,evolve_shelter_design,integrity_from,proposal_strength,seed_shelter_design,work_value},
     causal_log::{CausalLog, CausalNode},
     world::Position,
+    language::Lexicon,
+    diplomacy::{contact_between, Contact},
+    exchange::{exchange_amount, surplus, TradeRecord},
+    institutions::{coordination_bonus, update_institutions, Institution},
+    narrative::{misattribution, reinforce, ritual_relief, Narrative},
 };
 
 #[derive(Clone, Debug)]
@@ -57,6 +62,8 @@ pub struct SandboxFeature {
 pub struct Sandbox {
     pub seed:u64, pub year:f64, pub residents:Vec<Resident>, pub animals:Vec<SandboxAnimal>, pub monsters:Vec<SandboxMonster>,
     pub features:Vec<SandboxFeature>, pub households:Vec<Household>, pub settlements:Vec<SettlementIdentity>, pub projects:Vec<ConstructionProject>, pub structures:Vec<BuiltStructure>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
+    pub contacts:Vec<Contact>, pub institutions:Vec<Institution>, pub narratives:Vec<Narrative>,
+    pub trades:Vec<TradeRecord>, pub trade_count:u64, pub theft_count:u64,
 }
 
 fn unit(seed:u64, stream:u64)->f32 {
@@ -134,7 +141,8 @@ impl Sandbox {
             features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,
                 position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0,quantity:1.0,capacity:1.0,regeneration_per_day:0.0}); id+=1;
         }
-        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],projects:vec![],structures:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048,total_written:0},next_id:id}
+        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],projects:vec![],structures:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048,total_written:0},next_id:id,
+            contacts:vec![],institutions:vec![],narratives:vec![],trades:vec![],trade_count:0,theft_count:0}
     }
 
     pub fn spawn_resident_at(&mut self, position:Position) {
@@ -465,7 +473,10 @@ impl Sandbox {
             }
             let workspace=self.structures.iter().filter(|s|s.integrity>0.2&&dist(s.position,self.projects[pi].position)<28.0)
                 .map(|s|s.capabilities().workspace).fold(0.0_f32,f32::max);
-            let work=work_value(action,skill,days.min(2.0))*(1.0+workspace*0.35);
+            // Coordinated crews with an institution behind them work faster.
+            let crew_bonus=self.settlements.iter().find(|s|s.members.contains(&resident_id))
+                .map(|s|coordination_bonus(&self.institutions,s.id,action)).unwrap_or(0.0);
+            let work=work_value(action,skill,days.min(2.0))*(1.0+workspace*0.35)*(1.0+crew_bonus);
             // Builders haul their own materials as they work; dedicated Carry trips move more.
             if action!=ActionPrimitive::Carry {
                 let hid=self.projects[pi].household_id;
@@ -529,6 +540,14 @@ impl Sandbox {
                     // Conversation satiates belonging so socializing cannot dominate forever.
                     actor.mind.needs.belonging=(actor.mind.needs.belonging-0.12*days.min(1.0)).max(0.05);
                     target.mind.needs.belonging=(target.mind.needs.belonging-0.12*days.min(1.0)).max(0.05);
+                    // Gathering under a shared story eases fear a little.
+                    if let Some(sid)=self.settlements.iter().find(|s|s.members.contains(&actor.id)).map(|s|s.id) {
+                        let relief=ritual_relief(&self.narratives,sid);
+                        if relief>0.0 {
+                            actor.mind.needs.safety=(actor.mind.needs.safety-relief*days).max(0.0);
+                            target.mind.needs.safety=(target.mind.needs.safety-relief*days).max(0.0);
+                        }
+                    }
                 }
                 _=>{}
             }
@@ -637,6 +656,9 @@ impl Sandbox {
         self.step_social_generation(days);
         self.step_construction(days);
         self.update_settlement_identities();
+        self.step_language_contact();
+        self.step_trade_theft(days);
+        self.step_institutions_narratives();
         // Hunting: killing an animal yields meat for the hunter's household, or the hunter.
         let mut hunt_kills:Vec<(u64,Option<u64>,u64,f32)>=Vec::new();
         for r in &mut self.residents {
@@ -879,7 +901,7 @@ impl Sandbox {
                 let id=self.next_id; self.next_id+=1;
                 self.settlements.push(SettlementIdentity{
                     id,center:cluster.center,founded_year:self.year,last_seen_year:self.year,parent_id,members:vec![],
-                    culture:CulturalField::default(),shared_food:0.0,shared_material:0.0,knowledge_items:0,specialization:BTreeMap::new(),
+                    culture:CulturalField::default(),lexicon:Lexicon::seed_from(id),shared_food:0.0,shared_material:0.0,knowledge_items:0,specialization:BTreeMap::new(),
                 });
                 let label=parent_id.map(|p|format!("settlement {} split from {}",id,p)).unwrap_or_else(||format!("settlement {} emerged",id));
                 self.causal_log.push(self.year,CausalNode::Outcome{resident_id:None,label,value:0.7});
@@ -984,4 +1006,202 @@ impl Sandbox {
         }
     }
 
+    fn step_language_contact(&mut self) {
+        let seed=self.seed; let year=self.year;
+        // Independent drift first: isolation diverges vocabularies.
+        for (k,s) in self.settlements.iter_mut().enumerate() {
+            if s.members.is_empty(){continue;}
+            s.lexicon.drift(seed,(k as u64).wrapping_mul(2_654_435_761).wrapping_add(year.to_bits()),0.0001);
+        }
+        // Contact blends vocabularies and opens the diplomacy ledger.
+        let n=self.settlements.len();
+        for i in 0..n {
+            for j in (i+1)..n {
+                if self.settlements[i].members.is_empty()||self.settlements[j].members.is_empty(){continue;}
+                let d=dist(self.settlements[i].center,self.settlements[j].center);
+                if d>150.0{continue;}
+                let (a,b)=(self.settlements[i].id,self.settlements[j].id);
+                let before=self.contacts.len();
+                contact_between(&mut self.contacts,a,b,year);
+                if self.contacts.len()>before {
+                    self.causal_log.push(year,CausalNode::Outcome{resident_id:None,label:format!("settlements {a} and {b} made contact"),value:0.4});
+                }
+                let (left,right)=self.settlements.split_at_mut(j);
+                let (si,sj)=(&mut left[i],&mut right[0]);
+                si.lexicon.blend_toward(&sj.lexicon,0.02,seed,year.to_bits()^0xA5A5);
+                sj.lexicon.blend_toward(&si.lexicon,0.02,seed,year.to_bits()^0x5A5A);
+            }
+        }
+    }
+
+    fn households_near(&self,center:Position,radius:f32)->Vec<u64> {
+        self.households.iter().filter(|h|dist(h.home,center)<=radius).map(|h|h.id).collect()
+    }
+
+    fn step_trade_theft(&mut self, days:f32) {
+        let year=self.year; let seed=self.seed;
+        // Trade: surplus flows toward deficit between nearby settlements, never by script.
+        let snaps:Vec<(u64,Position,f32,f32,usize)>=self.settlements.iter()
+            .filter(|s|!s.members.is_empty())
+            .map(|s|(s.id,s.center,s.shared_food,s.shared_material,s.members.len())).collect();
+        for i in 0..snaps.len() {
+            for j in (i+1)..snaps.len() {
+                let (a,b)=(snaps[i],snaps[j]);
+                if dist(a.1,b.1)>150.0{continue;}
+                // Markets meet occasionally, not every step.
+                if stream_unit(seed,a.0.wrapping_mul(6_469_693).wrapping_add(b.0).wrapping_add(year.to_bits()))>=0.15{continue;}
+                for (stock_a,stock_b,reserve,carry,food) in [(a.2,b.2,20.0,8.0,true),(a.3,b.3,15.0,6.0,false)] {
+                    for (giver,taker) in [(i,j),(j,i)] {
+                        let (gs,ts)=if giver==i{(stock_a,stock_b)}else{(stock_b,stock_a)};
+                        let gm=if giver==i{snaps[i].4}else{snaps[j].4};
+                        let tm=if giver==i{snaps[j].4}else{snaps[i].4};
+                        let amt=exchange_amount(surplus(gs,gm,reserve),-surplus(ts,tm,reserve),carry);
+                        if amt<=0.05{continue;}
+                        let (gid,tid)=(snaps[giver].0,snaps[taker].0);
+                        let gcenter=snaps[giver].1; let tcenter=snaps[taker].1;
+                        let givers=self.households_near(gcenter,55.0);
+                        let takers=self.households_near(tcenter,55.0);
+                        if givers.is_empty()||takers.is_empty(){continue;}
+                        let mut left=amt;
+                        for hid in givers {
+                            if left<=0.0{break;}
+                            if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                                let x=if food{h.stored_food}else{h.shared_material};
+                                let take=x.min(left); 
+                                if food{h.stored_food-=take;}else{h.shared_material-=take;}
+                                left-=take;
+                            }
+                        }
+                        let moved=amt-left;
+                        if moved<=0.0{continue;}
+                        let per=move_per_household(moved,takers.len());
+                        for hid in takers {
+                            if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                                if food{h.stored_food+=per;}else{h.shared_material+=per;}
+                            }
+                        }
+                        contact_between(&mut self.contacts,gid,tid,year).note_exchange(moved);
+                        self.trade_count+=1;
+                        self.trades.push(TradeRecord{year,from_settlement:gid,to_settlement:tid,
+                            food:if food{moved}else{0.0},material:if food{0.0}else{moved}});
+                        if self.trades.len()>256{self.trades.drain(0..64);}
+                        if moved>3.0 {
+                            self.causal_log.push(year,CausalNode::Outcome{resident_id:None,
+                                label:format!("settlement {gid} traded {moved:.1} {} to {tid}",if food{"food"}else{"material"}),value:0.3});
+                        }
+                    }
+                }
+            }
+        }
+        // Theft: the very hungry may take from a nearby foreign store. Witnesses make it diplomacy.
+        let thieves:Vec<(u64,Position,Option<u64>)>=self.residents.iter()
+            .filter(|r|r.health>0.0&&r.mind.needs.hunger>0.85)
+            .map(|r|(r.id,r.position,r.life.kinship.household)).collect();
+        for (rid,pos,own) in thieves {
+            let mut best:Option<(u64,f32)>=None;
+            for h in &self.households {
+                if Some(h.id)==own||h.stored_food<10.0{continue;}
+                let d=dist(pos,h.home);
+                if d<25.0&&best.map(|(_,bd)|d<bd).unwrap_or(true){best=Some((h.id,d));}
+            }
+            let Some((hid,_))=best else{continue;};
+            let roll=stream_unit(seed,rid.wrapping_mul(3_824_908_129).wrapping_add(year.to_bits()));
+            if roll>=0.03*days.min(2.0){continue;}
+            if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                let take=2.0f32.min(h.stored_food); h.stored_food-=take;
+                if let Some(r)=self.residents.iter_mut().find(|r|r.id==rid) {
+                    r.mind.needs.hunger=(r.mind.needs.hunger-take*0.45).max(0.0);
+                }
+            }
+            self.theft_count+=1;
+            let witnesses=self.residents.iter()
+                .filter(|r|r.health>0.0&&r.id!=rid&&r.life.kinship.household==Some(hid)&&dist(r.position,pos)<25.0)
+                .count();
+            if witnesses>0 {
+                let thief_set=self.settlements.iter().find(|s|s.members.contains(&rid)).map(|s|s.id);
+                let victim_set=self.settlements.iter().filter(|s|dist(s.center,self.households.iter().find(|h|h.id==hid).map(|h|h.home).unwrap_or(pos))<60.0).map(|s|s.id).next();
+                if let (Some(a),Some(b))=(thief_set,victim_set) {
+                    if a!=b {
+                        contact_between(&mut self.contacts,a,b,year).note_conflict(0.3);
+                        self.causal_log.push(year,CausalNode::Outcome{resident_id:Some(rid),label:format!("caught stealing from settlement {b}"),value:-0.5});
+                    }
+                }
+            } else {
+                self.causal_log.push(year,CausalNode::Outcome{resident_id:Some(rid),label:"food went missing".into(),value:-0.2});
+            }
+        }
+    }
+
+    fn step_institutions_narratives(&mut self) {
+        use std::collections::BTreeMap;
+        let year=self.year;
+        // Institutions crystallize from coordinated action within each settlement.
+        let mut counts:BTreeMap<u64,BTreeMap<ActionPrimitive,u32>>=BTreeMap::new();
+        let mut sizes:BTreeMap<u64,usize>=BTreeMap::new();
+        for s in &self.settlements {
+            if s.members.is_empty(){continue;}
+            sizes.insert(s.id,s.members.len());
+            let entry=counts.entry(s.id).or_default();
+            for id in &s.members {
+                if let Some(r)=self.residents.iter().find(|r|r.id==*id&&r.health>0.0) {
+                    *entry.entry(r.current_action).or_default()+=1;
+                }
+            }
+        }
+        for (sid,map) in &counts {
+            let members=sizes.get(sid).copied().unwrap_or(1);
+            update_institutions(*sid,map,members,&mut self.institutions,year);
+        }
+        // Narratives grow where disasters strike without confident understanding.
+        let disasters:Vec<(WorldEventKind,Position,f32)>=self.events.iter().copied()
+            .filter(|e|e.active(year)&&matches!(e.kind,WorldEventKind::Fire|WorldEventKind::Flood|WorldEventKind::Earthquake|WorldEventKind::Storm))
+            .map(|e|(e.kind,e.position,e.radius)).collect();
+        if disasters.is_empty(){return;}
+        let mut seen:Vec<(u64,WorldEventKind)>=Vec::new();
+        let members:Vec<(u64,Position,u64,Awareness)>=self.residents.iter().filter(|r|r.health>0.0)
+            .filter_map(|r|{
+                let sid=self.settlements.iter().find(|s|s.members.contains(&r.id)).map(|s|s.id)?;
+                Some((r.id,r.position,sid,r.awareness.clone()))
+            }).collect();
+        for (kind,pos,radius) in disasters {
+            for sid in self.settlements.iter().filter(|s|!s.members.is_empty()).map(|s|s.id) {
+                if seen.contains(&(sid,kind)){continue;}
+                seen.push((sid,kind));
+                let mut affected=0usize; let mut confident=0usize;
+                for (_,p,msid,aw) in &members {
+                    if *msid!=sid{continue;}
+                    let dx=p.x-pos.x; let dy=p.y-pos.y;
+                    if (dx*dx+dy*dy).sqrt()>=radius{continue;}
+                    affected+=1;
+                    let want=match kind {
+                        WorldEventKind::Fire=>SituationKind::Fire,
+                        WorldEventKind::Flood=>SituationKind::Flood,
+                        _=>SituationKind::UnknownPhenomenon,
+                    };
+                    if aw.confidence(want)>=0.5{confident+=1;}
+                }
+                let mass=misattribution(affected,confident);
+                let label=match kind {
+                    WorldEventKind::Fire=>"fire spirits hunger",
+                    WorldEventKind::Flood=>"river spirits anger",
+                    WorldEventKind::Earthquake=>"earth spirits woke",
+                    _=>"storm spirits quarrel",
+                }.to_string();
+                let nmembers=self.settlements.iter().find(|s|s.id==sid).map(|s|s.members.len() as u32).unwrap_or(0);
+                reinforce(&mut self.narratives,sid,label,mass,nmembers,year);
+            }
+        }
+    }
+}
+
+fn move_per_household(moved:f32,takers:usize)->f32 {
+    moved/takers.max(1) as f32
+}
+
+fn stream_unit(seed:u64,salt:u64)->f32 {
+    let mut x=seed ^ salt.wrapping_mul(0x9E3779B97F4A7C15);
+    x^=x>>30; x=x.wrapping_mul(0xBF58476D1CE4E5B9);
+    x^=x>>27; x=x.wrapping_mul(0x94D049BB133111EB);
+    x^=x>>31;
+    (x as f64/u64::MAX as f64) as f32
 }
