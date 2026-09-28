@@ -316,7 +316,7 @@ fn sync_world(
     for a in &state.sim.animals {
         if !existing_animals.contains(&a.id) {
             commands.spawn((Sprite::from_color(Color::srgb(0.70,0.62,0.42),Vec2::new(9.0,7.0)),
-                Transform::from_xyz(a.position.x,a.position.y,1.1),AnimalSprite(a.id),WorldDynamic)));
+                Transform::from_xyz(a.position.x,a.position.y,1.1),AnimalSprite(a.id),WorldDynamic));
         }
     }
     for (e,tag,mut t,mut sprite) in &mut animals {
@@ -342,7 +342,7 @@ fn sync_world(
                     });
             } else {
                 commands.spawn((Sprite::from_color(Color::srgb(0.72,0.16,0.13),Vec2::splat(15.0)),
-                    Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id),WorldDynamic)));
+                    Transform::from_xyz(m.position.x,m.position.y,1.2),MonsterSprite(m.id),WorldDynamic));
             }
         }
     }
@@ -406,6 +406,7 @@ fn world_click(
         GodTool::Inspect=>{
             let threshold=18.0*cam_t.scale.x; let mut best:(f32,Option<Selected>)=(threshold,None);
             for r in &state.sim.residents {let d=world.distance(Vec2::new(r.position.x,r.position.y));if d<best.0{best=(d,Some(Selected::Resident(r.id)));}}
+            for a in &state.sim.animals {let d=world.distance(Vec2::new(a.position.x,a.position.y));if d<best.0{best=(d,Some(Selected::Animal(a.id)));}}
             for m in &state.sim.monsters {let d=world.distance(Vec2::new(m.position.x,m.position.y));if d<best.0{best=(d,Some(Selected::Monster(m.id)));}}
             state.selected=best.1;
         }
