@@ -524,13 +524,15 @@ fn update_ui(
                     p.design.length_m,p.design.width_m,p.design.binding_quality,p.position.x,p.position.y)
             ).unwrap_or_else(||"construction no longer exists".into()),
             Some(Selected::Structure(id))=>state.sim.structures.iter().find(|s|s.id==id).map(|s|
-                format!("STRUCTURE #{}\nhousehold #{}\nintegrity {:.0}%\ncompleted Y{:.1}\nmaterial {:.1}\nsize {:.1} × {:.1}m\nposition {:.0}, {:.0}",
-                    s.id,s.household_id,s.integrity*100.0,s.completed_year,s.material_invested,s.design.length_m,s.design.width_m,s.position.x,s.position.y)
+                format!("STRUCTURE #{}\nhousehold #{}\nintegrity {:.0}%\ncompleted Y{:.1}\nDESIGN gen {} parent {}\nmaterial {:.1}\nsize {:.1} × {:.1}m  thick {:.2}\nbinding {:.2}\nposition {:.0}, {:.0}",
+                    s.id,s.household_id,s.integrity*100.0,s.completed_year,s.design.generation,
+                    s.design.parent.map(|p|format!("#{}",p)).unwrap_or_else(||"origin".into()),
+                    s.material_invested,s.design.length_m,s.design.width_m,s.design.thickness_m,s.design.binding_quality,s.position.x,s.position.y)
             ).unwrap_or_else(||"structure no longer exists".into()),
 
             Some(Selected::Settlement)=>{
                 let alive=state.sim.residents.iter().filter(|r|r.health>0.0).count();
-                let mut s=format!("SETTLEMENT PULSE\nPopulation {}  Households {}  Villages {}\n\n",alive,state.sim.households.len(),state.sim.settlements.iter().filter(|x|!x.members.is_empty()).count());
+                let mut s=format!("SETTLEMENT PULSE\nPopulation {}  Households {}  Villages {}\nStructures {}  Projects {}\n\n",alive,state.sim.households.len(),state.sim.settlements.iter().filter(|x|!x.members.is_empty()).count(),state.sim.structures.len(),state.sim.projects.len());
                 for village in state.sim.settlements.iter().filter(|x|!x.members.is_empty()).take(6) {
                     let p=village.profile();
                     s.push_str(&format!("#{}  founded Y{:.1}  pop {}{}\nfood {:.0} material {:.0} knowledge {}\n",village.id,village.founded_year,village.members.len(),village.parent_id.map(|p|format!("  parent #{}",p)).unwrap_or_default(),village.shared_food,village.shared_material,village.knowledge_items));
