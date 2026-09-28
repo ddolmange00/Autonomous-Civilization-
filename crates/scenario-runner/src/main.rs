@@ -15,6 +15,22 @@ struct EmergenceSummary {
     knowledge_items:usize,
     causal_records:usize,
     causal_total:u64,
+    culture_divergence:f32,
+    mean_structure_integrity:f32,
+}
+
+fn culture_divergence(sim:&Sandbox)->f32 {
+    let active:Vec<_>=sim.settlements.iter().filter(|s|!s.members.is_empty()).collect();
+    if active.len()<2{return 0.0;}
+    let mut sum=0.0;let mut pairs=0u32;
+    for i in 0..active.len(){for j in (i+1)..active.len(){
+        let a=active[i].profile();let b=active[j].profile();
+        sum+=(a.confrontation-b.confrontation).abs()+(a.avoidance-b.avoidance).abs()+
+            (a.experimentation-b.experimentation).abs()+(a.cooperation-b.cooperation).abs()+
+            (a.construction-b.construction).abs();
+        pairs+=1;
+    }}
+    sum/(pairs.max(1) as f32*5.0)
 }
 
 fn summarize(sim:&Sandbox)->EmergenceSummary {
@@ -32,6 +48,8 @@ fn summarize(sim:&Sandbox)->EmergenceSummary {
         knowledge_items:sim.residents.iter().filter(|r|r.health>0.0).map(|r|r.knowledge.items.len()).sum(),
         causal_records:sim.causal_log.nodes.len(),
         causal_total:sim.causal_log.total_written,
+        culture_divergence:culture_divergence(sim),
+        mean_structure_integrity:if sim.structures.is_empty(){0.0}else{sim.structures.iter().map(|s|s.integrity).sum::<f32>()/sim.structures.len() as f32},
     }
 }
 
@@ -52,11 +70,11 @@ fn main() {
     let base_seed=args.get(3).and_then(|x|x.parse::<u64>().ok()).unwrap_or(847_291);
     let step_days=args.get(4).and_then(|x|x.parse::<f32>().ok()).unwrap_or(2.0).clamp(0.25,10.0);
 
-    println!("seed\tyear\talive\ttotal_residents\thouseholds\tactive_settlements\tsettlement_splits\tstructures\tprojects\tmax_design_gen\tknowledge_items\tcausal_records\tcausal_total");
+    println!("seed\tyear\talive\ttotal_residents\thouseholds\tactive_settlements\tsettlement_splits\tstructures\tprojects\tmax_design_gen\tknowledge_items\tcausal_records\tcausal_total\tculture_divergence\tmean_structure_integrity");
     for i in 0..seed_count {
         let s=run_emergence(base_seed+i,years,step_days);
-        println!("{}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        println!("{}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}",
             s.seed,s.year,s.alive,s.residents_total,s.households,s.active_settlements,s.settlement_lineages,
-            s.structures,s.projects,s.max_design_generation,s.knowledge_items,s.causal_records,s.causal_total);
+            s.structures,s.projects,s.max_design_generation,s.knowledge_items,s.causal_records,s.causal_total,s.culture_divergence,s.mean_structure_integrity);
     }
 }
