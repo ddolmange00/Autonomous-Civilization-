@@ -296,6 +296,13 @@ impl Sandbox {
             affordances.extend(generate_social(&social_targets));
             for a in &mut affordances {
                 if let Some(tid)=a.target {
+                    if let Some(p)=snapshot_projects.iter().find(|p|p.id==tid) {
+                        if r.life.kinship.household==Some(p.household_id) {
+                            a.expected.belonging+=0.14;
+                            a.expected.care+=0.08;
+                            if a.action==ActionPrimitive::Carry {a.expected.material+=0.30;}
+                        }
+                    }
                     if let Some(s)=snapshot_structures.iter().find(|s|s.id==tid&&s.integrity>0.2) {
                         let cap=s.capabilities();
                         match a.action {
@@ -837,9 +844,9 @@ impl Sandbox {
                 r.practice.skill(ActionPrimitive::Bind).max(r.practice.skill(ActionPrimitive::Raise)).max(r.practice.skill(ActionPrimitive::Dig))
             }).sum::<f32>()/members.len() as f32;
             let strength=proposal_strength(safety,rest,skill,h.shared_material);
-            let chance=(strength*days/365.0*2.8).clamp(0.0,0.05);
+            let chance=(strength*days/365.0*4.0).clamp(0.0,0.07);
             let roll=unit(self.seed,h.id.wrapping_mul(5_000_011)^self.year.to_bits());
-            if strength>0.05&&roll<chance {proposals.push((h.id,h.home,skill));}
+            if strength>0.035&&roll<chance {proposals.push((h.id,h.home,skill));}
         }
         for (hid,pos,skill) in proposals {
             let id=self.next_id;self.next_id+=1;
