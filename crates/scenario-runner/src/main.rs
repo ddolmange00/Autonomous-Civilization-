@@ -19,6 +19,8 @@ struct EmergenceSummary {
     mean_structure_integrity:f32,
     vegetation_remaining:f32,
     mineral_remaining:f32,
+    mean_project_work:f32,
+    mean_project_material:f32,
 }
 
 fn culture_divergence(sim:&Sandbox)->f32 {
@@ -60,6 +62,8 @@ fn summarize(sim:&Sandbox)->EmergenceSummary {
             let v:Vec<_>=sim.features.iter().filter(|f|f.kind==FeatureKind::LooseMaterial).collect();
             if v.is_empty(){0.0}else{v.iter().map(|f|(f.quantity/f.capacity.max(0.001)).clamp(0.0,1.0)).sum::<f32>()/v.len() as f32}
         },
+        mean_project_work:if sim.projects.is_empty(){0.0}else{sim.projects.iter().map(|p|(p.progress/p.required_work.max(0.001)).clamp(0.0,1.0)).sum::<f32>()/sim.projects.len() as f32},
+        mean_project_material:if sim.projects.is_empty(){0.0}else{sim.projects.iter().map(|p|(p.material_committed/p.material_required.max(0.001)).clamp(0.0,1.0)).sum::<f32>()/sim.projects.len() as f32},
     }
 }
 
@@ -80,11 +84,11 @@ fn main() {
     let base_seed=args.get(3).and_then(|x|x.parse::<u64>().ok()).unwrap_or(847_291);
     let step_days=args.get(4).and_then(|x|x.parse::<f32>().ok()).unwrap_or(2.0).clamp(0.25,10.0);
 
-    println!("seed\tyear\talive\ttotal_residents\thouseholds\tactive_settlements\tsettlement_splits\tstructures\tprojects\tmax_design_gen\tknowledge_items\tcausal_records\tcausal_total\tculture_divergence\tmean_structure_integrity\tvegetation_remaining\tmineral_remaining");
+    println!("seed\tyear\talive\ttotal_residents\thouseholds\tactive_settlements\tsettlement_splits\tstructures\tprojects\tmax_design_gen\tknowledge_items\tcausal_records\tcausal_total\tculture_divergence\tmean_structure_integrity\tvegetation_remaining\tmineral_remaining\tmean_project_work\tmean_project_material");
     for i in 0..seed_count {
         let s=run_emergence(base_seed+i,years,step_days);
-        println!("{}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3}",
+        println!("{}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}",
             s.seed,s.year,s.alive,s.residents_total,s.households,s.active_settlements,s.settlement_lineages,
-            s.structures,s.projects,s.max_design_generation,s.knowledge_items,s.causal_records,s.causal_total,s.culture_divergence,s.mean_structure_integrity,s.vegetation_remaining,s.mineral_remaining);
+            s.structures,s.projects,s.max_design_generation,s.knowledge_items,s.causal_records,s.causal_total,s.culture_divergence,s.mean_structure_integrity,s.vegetation_remaining,s.mineral_remaining,s.mean_project_work,s.mean_project_material);
     }
 }
