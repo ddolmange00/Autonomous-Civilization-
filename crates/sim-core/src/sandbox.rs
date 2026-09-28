@@ -298,8 +298,12 @@ impl Sandbox {
             }).collect();
             scored.sort_by(|a,b|b.1.total_cmp(&a.1));
             r.top_scores=scored.iter().take(5).map(|(i,s)|ActionScore{action:affordances[*i].action,score:*s}).collect();
-            let chosen=&affordances[scored[0].0]; r.current_action=chosen.action;
-            self.causal_log.push(self.year,CausalNode::Decision{resident_id:r.id,action:chosen.action,score:scored[0].1});
+            let chosen=&affordances[scored[0].0];
+            let previous_action=r.current_action;
+            r.current_action=chosen.action;
+            if previous_action!=chosen.action {
+                self.causal_log.push(self.year,CausalNode::Decision{resident_id:r.id,action:chosen.action,score:scored[0].1});
+            }
             let target=chosen.target.and_then(|id|{
                 features.iter().find(|f|f.id==id).map(|f|f.position)
                     .or_else(||snapshot_monsters.iter().find(|m|m.id==id).map(|m|m.position))
@@ -371,9 +375,11 @@ impl Sandbox {
                 }
             }
             let work=work_value(action,skill,days.min(2.0));
+            let before=(self.projects[pi].progress/self.projects[pi].required_work.max(0.1)).clamp(0.0,1.0);
             self.projects[pi].progress+=work;
-            if work>0.0 {
-                self.causal_log.push(self.year,CausalNode::Outcome{resident_id:Some(resident_id),label:format!("worked on construction {}",project_id),value:work});
+            let after=(self.projects[pi].progress/self.projects[pi].required_work.max(0.1)).clamp(0.0,1.0);
+            if (before*4.0).floor()<(after*4.0).floor() {
+                self.causal_log.push(self.year,CausalNode::Outcome{resident_id:Some(resident_id),label:format!("construction {} reached {:.0}%",project_id,after*100.0),value:after});
             }
         }
 
@@ -390,7 +396,9 @@ impl Sandbox {
                 let material_ratio=(used/material_need.max(0.001)).clamp(0.0,1.0);
                 let repair=work*0.008*(0.35+0.65*material_ratio);
                 self.structures[si].integrity=(self.structures[si].integrity+repair).min(1.0);
-                self.causal_log.push(self.year,CausalNode::Outcome{resident_id:Some(resident_id),label:format!("maintained structure {}",structure_id),value:repair});
+                if repair>=0.02 {
+                    self.causal_log.push(self.year,CausalNode::Outcome{resident_id:Some(resident_id),label:format!("maintained structure {}",structure_id),value:repair});
+                }
             }
         }
 
@@ -453,8 +461,17 @@ impl Sandbox {
                 if d<=38.0 && report.confidence>0.25 {
                     let trust=(0.35+r.mind.traits.social_trust*0.6).clamp(0.0,1.0);
                     let distortion=signed(self.seed,r.id.wrapping_mul(700_001)+*source)*0.22;
+                    let before=r.awareness.reports.get(&report.kind).copied();
                     r.awareness.hear(*report,trust,distortion,self.year);
-                    self.causal_log.push(self.year,CausalNode::Transmission{from:*source,to:r.id,label:format!("{:?} rumor",report.kind)});
+                    let after=r.awareness.reports.get(&report.kind).copied();
+                    let meaningful=match (before,after) {
+                        (None,Some(_))=>true,
+                        (Some(a),Some(b))=>b.confidence>a.confidence+0.08 || (b.perceived_severity-a.perceived_severity).abs()>0.12,
+                        _=>false,
+                    };
+                    if meaningful {
+                        self.causal_log.push(self.year,CausalNode::Transmission{from:*source,to:r.id,label:format!("{:?} rumor",report.kind)});
+                    }
                 }
             }
         }
@@ -701,7 +718,7 @@ impl Sandbox {
         let alive:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0).collect();
         let positions:Vec<Position>=alive.iter().map(|r|r.position).collect();
         let resident_ids:Vec<u64>=alive.iter().map(|r|r.id).collect();
-        let clusters=detect_settlements(&positions,45.0,3);
+        let clusters=detect_settlements(&positions,65.0,4);
         let previous_membership:BTreeMap<u64,u64>=self.settlements.iter().flat_map(|s|s.members.iter().map(move |id|(*id,s.id))).collect();
         let mut seen:BTreeSet<u64>=BTreeSet::new();
 
