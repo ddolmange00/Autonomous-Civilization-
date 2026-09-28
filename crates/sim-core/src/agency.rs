@@ -31,6 +31,7 @@ pub struct Needs {
     pub status: f32,
     pub curiosity: f32,
     pub care: f32,
+    pub resources: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
@@ -44,6 +45,7 @@ pub struct ExpectedOutcome {
     pub care: f32,
     pub physical_risk: f32,
     pub effort: f32,
+    pub material: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -69,12 +71,13 @@ impl AgentMind {
         let social = o.belonging*n.belonging*(0.4+0.8*t.social_trust)
             + o.care*n.care*(0.35+0.9*t.empathy) + o.status*n.status*(0.45+0.65*t.aggression);
         let learning = o.knowledge*n.curiosity*(0.35+t.curiosity+t.novelty_seeking*0.4);
+        let resources = o.material*n.resources*(0.30+0.55*t.planning_horizon+0.25*t.persistence);
         let risk = o.physical_risk*(1.35-t.risk_tolerance.clamp(0.,1.));
         let effort = o.effort*(1.15-t.persistence.clamp(0.,1.)*0.45);
         let norm = a.local_norm*t.conformity;
         let learned=*self.learned_action_value.get(&a.action).unwrap_or(&0.0);
         let uncertainty_cost=a.uncertainty*(0.45-t.risk_tolerance*0.25-t.curiosity*0.15);
-        survival+social+learning+norm+learned-risk-effort-uncertainty_cost+idiosyncratic_noise
+        survival+social+learning+resources+norm+learned-risk-effort-uncertainty_cost+idiosyncratic_noise
     }
 
     pub fn choose<'a>(&self, affordances:&'a [Affordance], noise:&[f32])->Option<&'a Affordance> {
