@@ -521,8 +521,10 @@ impl Sandbox {
         for f in &mut self.features {
             if f.regeneration_per_day>0.0 {
                 let drought:f32=active_events.iter().filter(|e|e.kind==WorldEventKind::Drought).map(|e|e.influence_at(f.position)).sum();
+                let rain:f32=active_events.iter().filter(|e|e.kind==WorldEventKind::Rain).map(|e|e.influence_at(f.position)).sum();
                 let fire:f32=active_events.iter().filter(|e|e.kind==WorldEventKind::Fire).map(|e|e.influence_at(f.position)).sum();
-                let growth=f.regeneration_per_day*days*(1.0-drought.clamp(0.0,0.95));
+                let moisture=(1.0-drought.clamp(0.0,0.95))*(1.0+rain.clamp(0.0,1.5)*0.65);
+                let growth=f.regeneration_per_day*days*moisture;
                 f.quantity=(f.quantity+growth-fire*0.18*days).clamp(0.0,f.capacity);
             }
         }
