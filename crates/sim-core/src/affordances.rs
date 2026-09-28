@@ -77,6 +77,10 @@ pub fn generate(features:&[PerceivedFeature], cap:LocalCapabilities)->Vec<Afford
             FeatureKind::Shelter | FeatureKind::ConstructedObject => {
                 push(&mut out,ActionPrimitive::Hide,f,ExpectedOutcome{safety:0.25,rest:0.08,..Default::default()});
                 push(&mut out,ActionPrimitive::Experiment,f,ExpectedOutcome{knowledge:0.15,..Default::default()});
+                if f.danger>0.04 {
+                    push(&mut out,ActionPrimitive::Bind,f,ExpectedOutcome{safety:0.12,knowledge:0.05,status:0.03,effort:0.12,..Default::default()});
+                    push(&mut out,ActionPrimitive::Raise,f,ExpectedOutcome{safety:0.14,knowledge:0.05,status:0.03,physical_risk:f.danger*0.25,effort:0.16,..Default::default()});
+                }
             }
             FeatureKind::ConstructionSite => {
                 push(&mut out,ActionPrimitive::Bind,f,ExpectedOutcome{safety:0.14,knowledge:0.08,status:0.04,effort:0.16,..Default::default()});
