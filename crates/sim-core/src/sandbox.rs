@@ -22,6 +22,7 @@ use crate::{
     settlement_detection::detect_settlements,
     settlement_identity::{cluster_member_ids,SettlementIdentity},
     culture::CulturalField,
+    built_environment::{BuiltStructure,ConstructionProject,integrity_from,proposal_strength,seed_shelter_design,work_value},
     causal_log::{CausalLog, CausalNode},
     world::Position,
 };
@@ -54,7 +55,7 @@ pub struct SandboxFeature {
 #[derive(Clone, Debug)]
 pub struct Sandbox {
     pub seed:u64, pub year:f64, pub residents:Vec<Resident>, pub animals:Vec<SandboxAnimal>, pub monsters:Vec<SandboxMonster>,
-    pub features:Vec<SandboxFeature>, pub households:Vec<Household>, pub settlements:Vec<SettlementIdentity>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
+    pub features:Vec<SandboxFeature>, pub households:Vec<Household>, pub settlements:Vec<SettlementIdentity>, pub projects:Vec<ConstructionProject>, pub structures:Vec<BuiltStructure>, pub events:Vec<WorldEvent>, pub causal_log:CausalLog, pub next_id:u64,
 }
 
 fn unit(seed:u64, stream:u64)->f32 {
@@ -123,7 +124,7 @@ impl Sandbox {
             features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,
                 position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0}); id+=1;
         }
-        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
+        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],projects:vec![],structures:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
     }
 
     pub fn spawn_resident_at(&mut self, position:Position) {
@@ -187,11 +188,14 @@ impl Sandbox {
     pub fn step(&mut self,days:f32) {
         self.year+=days as f64/365.0;
         let snapshot_residents=self.residents.clone();
+        let snapshot_projects=self.projects.clone();
+        let snapshot_structures=self.structures.clone();
         let snapshot_monsters=self.monsters.clone();
         let snapshot_animals=self.animals.clone();
         let active_events:Vec<_>=self.events.iter().copied().filter(|e|e.active(self.year)).collect();
         let features=self.features.clone();
         let mut social_effects:Vec<(u64,u64,ActionPrimitive)>=Vec::new();
+        let mut construction_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
         for r in &mut self.residents {
             if r.health<=0.0 { continue; }
             r.mind.needs.hunger=(r.mind.needs.hunger+days*0.006).clamp(0.0,1.0);
@@ -224,6 +228,20 @@ impl Sandbox {
             for a in &snapshot_animals {
                 let d=dist(r.position,a.position);
                 if a.health>0.0 && d<=75.0 { perceived.push(PerceivedFeature{id:a.id,kind:FeatureKind::Creature,distance_m:d,danger:0.08+a.archetype.fear*0.08,food_hint:0.35,material_hint:0.18,uncertainty:(d/100.0).clamp(0.05,0.7)}); }
+            }
+            for p in &snapshot_projects {
+                let d=dist(r.position,p.position);
+                if d<=85.0 {
+                    perceived.push(PerceivedFeature{id:p.id,kind:FeatureKind::ConstructionSite,distance_m:d,danger:0.03,
+                        food_hint:0.0,material_hint:p.material_committed/p.material_required.max(0.1),uncertainty:0.12});
+                }
+            }
+            for s in &snapshot_structures {
+                let d=dist(r.position,s.position);
+                if d<=85.0 {
+                    perceived.push(PerceivedFeature{id:s.id,kind:FeatureKind::ConstructedObject,distance_m:d,danger:(1.0-s.integrity)*0.2,
+                        food_hint:0.0,material_hint:s.integrity,uncertainty:0.05});
+                }
             }
             for m in &snapshot_monsters {
                 let d=dist(r.position,m.position);
@@ -266,6 +284,8 @@ impl Sandbox {
                 features.iter().find(|f|f.id==id).map(|f|f.position)
                     .or_else(||snapshot_monsters.iter().find(|m|m.id==id).map(|m|m.position))
                     .or_else(||snapshot_residents.iter().find(|o|o.id==id).map(|o|o.position))
+                    .or_else(||snapshot_projects.iter().find(|p|p.id==id).map(|p|p.position))
+                    .or_else(||snapshot_structures.iter().find(|s|s.id==id).map(|s|s.position))
             });
             let mobility=mobility_factor(r.life.stage(self.year));
             if let Some(t)=target {
@@ -273,8 +293,17 @@ impl Sandbox {
                     ActionPrimitive::Avoid|ActionPrimitive::Hide=>move_away(&mut r.position,t,days*1.4*mobility,&features),
                     ActionPrimitive::Attack=>move_toward(&mut r.position,t,days*1.8*mobility,&features),
                     ActionPrimitive::Gather|ActionPrimitive::Carry|ActionPrimitive::Observe|ActionPrimitive::Experiment|
-                    ActionPrimitive::Dig|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Bind=>move_toward(&mut r.position,t,days*0.7*mobility,&features),
+                    ActionPrimitive::Dig|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Bind|ActionPrimitive::Raise=>move_toward(&mut r.position,t,days*0.7*mobility,&features),
                     _=>{}
+                }
+            }
+            if let Some(pid)=chosen.target {
+                if snapshot_projects.iter().any(|p|p.id==pid) && matches!(chosen.action,ActionPrimitive::Bind|ActionPrimitive::Raise|ActionPrimitive::Dig|ActionPrimitive::Carry|ActionPrimitive::Experiment) {
+                    construction_work.push((pid,r.id,chosen.action,r.practice.skill(chosen.action)));
+                }
+                if snapshot_structures.iter().any(|s|s.id==pid) && chosen.action==ActionPrimitive::Hide {
+                    r.mind.needs.safety=(r.mind.needs.safety-0.04*days).max(0.0);
+                    r.mind.needs.rest=(r.mind.needs.rest-0.025*days).max(0.0);
                 }
             }
             if matches!(chosen.action,ActionPrimitive::Assist|ActionPrimitive::Communicate) {
@@ -298,6 +327,23 @@ impl Sandbox {
             r.memory.remember(Episode{year:self.year,action:chosen.action,target:chosen.target,value,surprise:chosen.uncertainty,
                 danger:chosen.expected.physical_risk,social_visibility:0.2});
         }
+        for (project_id,resident_id,action,skill) in construction_work {
+            let Some(pi)=self.projects.iter().position(|p|p.id==project_id) else{continue;};
+            if action==ActionPrimitive::Carry {
+                let hid=self.projects[pi].household_id;
+                if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                    let moved=(0.6+skill*1.4)*days.min(2.0);
+                    let amount=moved.min(h.shared_material).min((self.projects[pi].material_required-self.projects[pi].material_committed).max(0.0));
+                    h.shared_material-=amount;self.projects[pi].material_committed+=amount;
+                }
+            }
+            let work=work_value(action,skill,days.min(2.0));
+            self.projects[pi].progress+=work;
+            if work>0.0 {
+                self.causal_log.push(self.year,CausalNode::Outcome{resident_id:Some(resident_id),label:format!("worked on construction {}",project_id),value:work});
+            }
+        }
+
         for (actor_id,target_id,action) in social_effects {
             let Some(ai)=self.residents.iter().position(|r|r.id==actor_id) else{continue;};
             let Some(ti)=self.residents.iter().position(|r|r.id==target_id) else{continue;};
@@ -392,6 +438,7 @@ impl Sandbox {
             }
         }
         self.step_social_generation(days);
+        self.step_construction(days);
         self.update_settlement_identities();
         for r in &mut self.residents {
             if r.current_action==ActionPrimitive::Attack {
@@ -636,6 +683,53 @@ impl Sandbox {
 
         for s in &mut self.settlements {
             if !seen.contains(&s.id) && self.year-s.last_seen_year>2.0 {s.members.clear();}
+        }
+    }
+
+    fn step_construction(&mut self,days:f32) {
+        // Proposals arise from local need, practiced construction actions and stored material.
+        let mut proposals:Vec<(u64,Position,f32)>=Vec::new();
+        for h in &self.households {
+            if h.members.is_empty(){continue;}
+            if self.projects.iter().any(|p|p.household_id==h.id){continue;}
+            if self.structures.iter().any(|s|s.household_id==h.id&&dist(s.position,h.home)<24.0){continue;}
+            let members:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(h.id)).collect();
+            if members.is_empty(){continue;}
+            let safety=members.iter().map(|r|r.mind.needs.safety).sum::<f32>()/members.len() as f32;
+            let rest=members.iter().map(|r|r.mind.needs.rest).sum::<f32>()/members.len() as f32;
+            let skill=members.iter().map(|r|{
+                r.practice.skill(ActionPrimitive::Bind).max(r.practice.skill(ActionPrimitive::Raise)).max(r.practice.skill(ActionPrimitive::Dig))
+            }).sum::<f32>()/members.len() as f32;
+            let strength=proposal_strength(safety,rest,skill,h.shared_material);
+            let chance=(strength*days/365.0*1.4).clamp(0.0,0.03);
+            let roll=unit(self.seed,h.id.wrapping_mul(5_000_011)^self.year.to_bits());
+            if strength>0.12&&roll<chance {proposals.push((h.id,h.home,skill));}
+        }
+        for (hid,pos,skill) in proposals {
+            let id=self.next_id;self.next_id+=1;
+            let available=self.households.iter().find(|h|h.id==hid).map(|h|h.shared_material).unwrap_or(0.0);
+            let design=seed_shelter_design(id,None,0,skill,available);
+            let required_material=(16.0+design.length_m*design.width_m*1.6).clamp(14.0,45.0);
+            let required_work=(18.0+design.length_m*design.width_m*2.2).clamp(18.0,60.0);
+            let initial=if let Some(h)=self.households.iter_mut().find(|h|h.id==hid){
+                let x=h.shared_material.min(required_material*0.25);h.shared_material-=x;x
+            }else{0.0};
+            self.projects.push(ConstructionProject{id,household_id:hid,position:pos,design,progress:0.0,required_work,
+                material_committed:initial,material_required:required_material});
+            self.causal_log.push(self.year,CausalNode::Outcome{resident_id:None,label:format!("construction {} proposed by household {}",id,hid),value:0.3});
+        }
+
+        let mut completed=Vec::new();
+        for (i,p) in self.projects.iter().enumerate() {
+            if p.progress>=p.required_work && p.material_committed>=p.material_required*0.80 {completed.push(i);}
+        }
+        for i in completed.into_iter().rev() {
+            let p=self.projects.remove(i);
+            let local:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(p.household_id)).collect();
+            let skill=if local.is_empty(){0.0}else{local.iter().map(|r|r.practice.skill(ActionPrimitive::Raise).max(r.practice.skill(ActionPrimitive::Bind))).sum::<f32>()/local.len() as f32};
+            let integrity=integrity_from(&p.design,skill,p.material_committed/p.material_required.max(0.1));
+            self.structures.push(BuiltStructure{id:p.id,household_id:p.household_id,position:p.position,design:p.design,integrity,completed_year:self.year,material_invested:p.material_committed});
+            self.causal_log.push(self.year,CausalNode::Outcome{resident_id:None,label:format!("construction {} completed with integrity {:.2}",p.id,integrity),value:integrity});
         }
     }
 
