@@ -639,7 +639,7 @@ impl Sandbox {
             match (a.life.kinship.household,b.life.kinship.household) {
                 (None,None)=>{
                     let hid=self.next_id;self.next_id+=1;
-                    self.households.push(Household{id:hid,members:vec![a.id,b.id],home:Position{x:(a.position.x+b.position.x)*0.5,y:(a.position.y+b.position.y)*0.5},stored_food:80.0,shared_material:0.0,cohesion:0.55,migration_goal:None});
+                    self.households.push(Household{id:hid,members:vec![a.id,b.id],home:Position{x:(a.position.x+b.position.x)*0.5,y:(a.position.y+b.position.y)*0.5},stored_food:80.0,shared_material:0.0,cohesion:0.55,migration_goal:None,construction_drive:0.0});
                     a.life.kinship.household=Some(hid);b.life.kinship.household=Some(hid);
                 }
                 (Some(h),None)=>{b.life.kinship.household=Some(h);if let Some(hh)=self.households.iter_mut().find(|x|x.id==h){if !hh.members.contains(&b.id){hh.members.push(b.id);}}},
@@ -839,6 +839,7 @@ impl Sandbox {
     fn step_construction(&mut self,days:f32) {
         // Proposals arise from local need, practiced construction actions and stored material.
         let mut proposals:Vec<(u64,Position,f32)>=Vec::new();
+        let mut drive_updates:Vec<(u64,Position,f32,f32)>=Vec::new();
         for h in &self.households {
             if h.members.is_empty(){continue;}
             if self.projects.iter().any(|p|p.household_id==h.id){continue;}
@@ -851,9 +852,18 @@ impl Sandbox {
                 r.practice.skill(ActionPrimitive::Bind).max(r.practice.skill(ActionPrimitive::Raise)).max(r.practice.skill(ActionPrimitive::Dig))
             }).sum::<f32>()/members.len() as f32;
             let strength=proposal_strength(safety,rest,skill,h.shared_material);
-            let chance=(strength*days/365.0*4.0).clamp(0.0,0.07);
-            let roll=unit(self.seed,h.id.wrapping_mul(5_000_011)^self.year.to_bits());
-            if strength>0.035&&roll<chance {proposals.push((h.id,h.home,skill));}
+            let temperament=0.75+unit(self.seed,h.id.wrapping_mul(5_000_011))*0.50;
+            let increment=strength*days.max(0.0)/90.0*temperament;
+            drive_updates.push((h.id,h.home,skill,increment));
+        }
+        for (hid,home,skill,increment) in drive_updates {
+            if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                h.construction_drive=(h.construction_drive+increment).min(2.0);
+                if h.construction_drive>=1.0 {
+                    h.construction_drive=0.0;
+                    proposals.push((hid,home,skill));
+                }
+            }
         }
         for (hid,pos,skill) in proposals {
             let id=self.next_id;self.next_id+=1;
