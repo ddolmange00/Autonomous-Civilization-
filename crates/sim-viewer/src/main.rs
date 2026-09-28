@@ -287,7 +287,7 @@ fn sync_world(
     mut monsters:Query<(Entity,&MonsterSprite,&mut Transform,&mut Sprite)>,
     mut animals:Query<(Entity,&AnimalSprite,&mut Transform,&mut Sprite)>,
     mut monster_pixels:Query<(&MonsterPixel,&mut Transform)>,
-    mut features:Query<(Entity,&FeatureSprite,&mut Transform)>,
+    mut features:Query<(Entity,&FeatureSprite,&mut Transform,&mut Sprite)>,
     mut projects:Query<(Entity,&ProjectSprite,&mut Transform,&mut Sprite)>,
     mut structures:Query<(Entity,&StructureSprite,&mut Transform,&mut Sprite)>,
     overlays:Query<(Entity,&EventOverlay)>,
@@ -300,7 +300,7 @@ fn sync_world(
             sprite.color=if r.health<=0.0 {Color::srgb(0.20,0.16,0.14)} else {Color::srgb(0.88,0.76,0.48)};
         }
     }
-    let existing_features:Vec<u64>=features.iter().map(|(_,f,_)|f.0).collect();
+    let existing_features:Vec<u64>=features.iter().map(|(_,f,_,_)|f.0).collect();
     for f in &state.sim.features {
         if !existing_features.contains(&f.id) {
             let (color,size,z)=match f.kind {
@@ -313,8 +313,22 @@ fn sync_world(
             commands.spawn((Sprite::from_color(color,size),Transform::from_xyz(f.position.x,f.position.y,z),FeatureSprite(f.id),WorldDynamic));
         }
     }
-    for (_,tag,mut t) in &mut features {
-        if let Some(f)=state.sim.features.iter().find(|f|f.id==tag.0){t.translation.x=f.position.x;t.translation.y=f.position.y;}
+    for (_,tag,mut t,mut sprite) in &mut features {
+        if let Some(f)=state.sim.features.iter().find(|f|f.id==tag.0){
+            t.translation.x=f.position.x;t.translation.y=f.position.y;
+            let q=(f.quantity/f.capacity.max(0.001)).clamp(0.0,1.0);
+            match f.kind {
+                FeatureKind::Vegetation=>{
+                    sprite.custom_size=Some(Vec2::new(4.0+3.0*q,5.0+5.0*q));
+                    sprite.color=Color::srgb(0.08+0.04*q,0.20+0.20*q,0.10+0.06*q);
+                }
+                FeatureKind::LooseMaterial=>{
+                    sprite.custom_size=Some(Vec2::splat(3.0+3.0*q));
+                    sprite.color=Color::srgb(0.34+0.22*q,0.30+0.18*q,0.22+0.12*q);
+                }
+                _=>{}
+            }
+        }
     }
     let existing_animals:Vec<u64>=animals.iter().map(|(_,a,_,_)|a.0).collect();
     for a in &state.sim.animals {
