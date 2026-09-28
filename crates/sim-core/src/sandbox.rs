@@ -326,6 +326,14 @@ impl Sandbox {
             if matches!(chosen.action,ActionPrimitive::Observe|ActionPrimitive::Experiment|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Dig) {
                 r.knowledge.learn(format!("action::{:?}",chosen.action),value,0.18+chosen.expected.knowledge*0.5);
             }
+            if matches!(chosen.action,ActionPrimitive::Observe|ActionPrimitive::Experiment) {
+                if let Some(tid)=chosen.target {
+                    if let Some(s)=snapshot_structures.iter().find(|s|s.id==tid) {
+                        let confidence=if chosen.action==ActionPrimitive::Experiment{0.42}else{0.20};
+                        r.knowledge.learn(format!("design::{}",s.id),s.integrity,confidence);
+                    }
+                }
+            }
             if chosen.action==ActionPrimitive::Gather {
                 if let Some(hid)=r.life.kinship.household {
                     if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
@@ -751,8 +759,16 @@ impl Sandbox {
         for (hid,pos,skill) in proposals {
             let id=self.next_id;self.next_id+=1;
             let available=self.households.iter().find(|h|h.id==hid).map(|h|h.shared_material).unwrap_or(0.0);
-            let parent=self.structures.iter().filter(|s|s.household_id==hid).max_by(|a,b|a.completed_year.total_cmp(&b.completed_year));
-            let design=if let Some(parent)=parent {
+            let members:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)).collect();
+            let mut parent_score:Option<(&BuiltStructure,f32)>=None;
+            for s in &self.structures {
+                let key=format!("design::{}",s.id);
+                let learned=members.iter().filter_map(|r|r.knowledge.items.get(&key)).map(|k|k.confidence).fold(0.0_f32,f32::max);
+                let own=if s.household_id==hid{0.35}else{0.0};
+                let score=learned+own+(s.integrity*0.15);
+                if score>0.20&&parent_score.map(|(_,best)|score>best).unwrap_or(true){parent_score=Some((s,score));}
+            }
+            let design=if let Some((parent,_))=parent_score {
                 let variation=signed(self.seed,id.wrapping_mul(13_337)^self.year.to_bits());
                 evolve_shelter_design(&parent.design,id,skill,available,variation)
             } else {
