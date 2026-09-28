@@ -62,5 +62,8 @@ pub mod warfare;
 pub mod logistics;
 pub mod seafaring;
 pub mod invention;
+pub mod civilization;
+pub mod lod;
+pub mod history;
 
 pub use world::{Civilization, World};

@@ -36,6 +36,9 @@ use crate::{
     invention::{seed_float_design, seed_tool_design, test_prototype},
     ground_truth::{canonical_registry, GroundTruthRegistry},
     design::{DesignGenome, Function},
+    civilization::Civilization,
+    lod::Cohort,
+    history::{compact, EraSummary},
 };
 
 #[derive(Clone, Debug)]
@@ -72,7 +75,12 @@ pub struct Sandbox {
     pub trades:Vec<TradeRecord>, pub trade_count:u64, pub theft_count:u64,
     pub warbands:Vec<Warband>, pub battles:u64, pub monsters_repelled:u64,
     pub ground_truth:GroundTruthRegistry, pub draft_count:u64,
+    pub civilizations:Vec<Civilization>, pub cohorts:Vec<Cohort>, pub eras:Vec<EraSummary>,
+    pub last_cohort_year:f64,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Preset { Default, Arid, Rich }
 
 fn unit(seed:u64, stream:u64)->f32 {
     let mut x=seed ^ stream.wrapping_mul(0x9E3779B97F4A7C15);
@@ -105,7 +113,13 @@ fn move_away(p:&mut Position,target:Position,amount:f32,features:&[SandboxFeatur
 }
 
 impl Sandbox {
-    pub fn new(seed:u64)->Self {
+    pub fn new(seed:u64)->Self { Self::with_preset(seed,Preset::Default) }
+    pub fn with_preset(seed:u64,preset:Preset)->Self {
+        let (regen_mult,food_mult)=match preset {
+            Preset::Default=>(1.0,1.0),
+            Preset::Arid=>(0.3,0.7),
+            Preset::Rich=>(1.5,1.2),
+        };
         let mut residents=Vec::new();
         for i in 0..36u64 {
             let mind=AgentMind{
@@ -130,8 +144,8 @@ impl Sandbox {
             let capacity=18.0+unit(seed,880+i)*26.0;
             features.push(SandboxFeature{id,kind:FeatureKind::Vegetation,
                 position:Position{x:-220.0+unit(seed,500+i)*440.0,y:-160.0+unit(seed,700+i)*320.0},
-                danger:0.02,food:0.35+unit(seed,900+i)*0.45,material:0.9,
-                quantity:capacity*(0.55+unit(seed,960+i)*0.40),capacity,regeneration_per_day:0.05+unit(seed,980+i)*0.07}); id+=1;
+                danger:0.02,food:(0.35+unit(seed,900+i)*0.45)*food_mult,material:0.9,
+                quantity:capacity*(0.55+unit(seed,960+i)*0.40),capacity,regeneration_per_day:(0.05+unit(seed,980+i)*0.07)*regen_mult}); id+=1;
         }
         for i in 0..16u64 {
             let capacity=10.0+unit(seed,1010+i)*28.0;
@@ -151,7 +165,8 @@ impl Sandbox {
         }
         Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],projects:vec![],structures:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048,total_written:0},next_id:id,
             contacts:vec![],institutions:vec![],narratives:vec![],trades:vec![],trade_count:0,theft_count:0,
-            warbands:vec![],battles:0,monsters_repelled:0,ground_truth:canonical_registry(),draft_count:0}
+            warbands:vec![],battles:0,monsters_repelled:0,ground_truth:canonical_registry(),draft_count:0,
+            civilizations:vec![],cohorts:vec![],eras:vec![],last_cohort_year:-1.0}
     }
 
     pub fn spawn_resident_at(&mut self, position:Position) {
@@ -707,6 +722,8 @@ impl Sandbox {
         self.step_institutions_narratives();
         self.step_experimentation(days);
         self.step_warfare(days);
+        self.step_civilizations_cohorts();
+        self.step_history();
         // Hunting: killing an animal yields meat for the hunter's household, or the hunter.
         let mut hunt_kills:Vec<(u64,Option<u64>,u64,f32)>=Vec::new();
         for r in &mut self.residents {
@@ -751,7 +768,7 @@ impl Sandbox {
             for j in (i+1)..initial_len {
                 let (left,right)=self.residents.split_at_mut(j);
                 let a=&mut left[i]; let b=&mut right[0];
-                if a.health<=0.0||b.health<=0.0||dist(a.position,b.position)>12.0 {continue;}
+                if a.health<=0.0||b.health<=0.0||dist(a.position,b.position)>18.0 {continue;}
                 let at=a.mind.traits; let bt=b.mind.traits;
                 {
                     let ra=a.life.social.relation_mut(b.id);
@@ -766,7 +783,7 @@ impl Sandbox {
                 if adult_a&&adult_b&&!a.life.kinship.partners.contains(&b.id) {
                     let rel=a.life.social.relations.get(&b.id).copied().unwrap_or_default();
                     let affinity=partnership_affinity(rel,at,bt);
-                    let chance=(days/365.0*0.45*((affinity-0.72)/0.28).clamp(0.0,1.0)).clamp(0.0,0.05);
+                    let chance=(days/365.0*1.2*((affinity-0.72)/0.28).clamp(0.0,1.0)).clamp(0.0,0.05);
                     let roll=unit(self.seed,a.id.wrapping_mul(1_000_003)^b.id^year.to_bits());
                     if affinity>0.72&&roll<chance {new_partnerships.push((i,j));}
                 }
@@ -815,7 +832,7 @@ impl Sandbox {
             for partner_id in &mother.life.kinship.partners {
                 let Some(j)=self.residents.iter().position(|r|r.id==*partner_id) else{continue;};
                 let partner=&self.residents[j];
-                if partner.health<=0.0||partner.life.sex!=Sex::Male||partner.life.stage(year)!=LifeStage::Adult||dist(mother.position,partner.position)>24.0{continue;}
+                if partner.health<=0.0||partner.life.sex!=Sex::Male||partner.life.stage(year)!=LifeStage::Adult||dist(mother.position,partner.position)>32.0{continue;}
                 let rel=mother.life.social.relations.get(partner_id).copied().unwrap_or_default();
                 let score=rel.trust*0.45+rel.affection*0.55;
                 if best.map(|(_,s)|score>s).unwrap_or(true){best=Some((j,score));}
@@ -893,7 +910,7 @@ impl Sandbox {
             if members.is_empty(){continue;}
             let pressure=h.pressure();
             let disposition=members.iter().map(|r|r.mind.traits.risk_tolerance*0.35+r.mind.traits.novelty_seeking*0.40+r.mind.traits.planning_horizon*0.25).sum::<f32>()/members.len() as f32;
-            let trigger=((pressure-0.40).max(0.0)*disposition*days/365.0*1.8).clamp(0.0,0.03);
+            let trigger=((pressure-0.40).max(0.0)*disposition*days/365.0*1.1).clamp(0.0,0.03);
             let roll=unit(self.seed,h.id.wrapping_mul(4_294_967)^year.to_bits());
             if roll>=trigger{continue;}
             let mut best:Option<(Position,f32)>=None;
@@ -1448,6 +1465,52 @@ impl Sandbox {
                     }
                 }
             }
+        }
+    }
+    /// Civilizations re-derive from lineage and contact every step; cohorts and
+    /// history compact on year boundaries so deep time stays affordable.
+    fn step_civilizations_cohorts(&mut self) {
+        let year=self.year;
+        let pairs:Vec<(u64,Option<u64>)>=self.settlements.iter().map(|s|(s.id,s.parent_id)).collect();
+        let mut next_id=self.settlements.iter().map(|s|s.id).max().unwrap_or(0)+1;
+        self.civilizations=crate::civilization::derive_civilizations(&pairs,&self.contacts,year,&mut next_id);
+        let yf=year.floor();
+        if yf<=self.last_cohort_year{return;}
+        self.last_cohort_year=yf;
+        let snaps:Vec<(u64,Position,usize,f32,f32)>=self.settlements.iter()
+            .filter(|s|!s.members.is_empty())
+            .map(|s|(s.id,s.center,s.members.len(),s.shared_food,
+                self.structures.iter().filter(|t|dist(t.position,s.center)<35.0)
+                    .map(|t|t.capabilities().storage).sum::<f32>())).collect();
+        for (sid,center,members,food,storage) in snaps {
+            if members>=4&&!self.cohorts.iter().any(|c|c.settlement_id==sid) {
+                self.cohorts.push(Cohort{settlement_id:sid,count:6.0});
+            }
+            let due=if let Some(c)=self.cohorts.iter_mut().find(|c|c.settlement_id==sid) {
+                let per_capita=food/members.max(1) as f32;
+                c.step_year(per_capita,storage)
+            } else {0.0};
+            if due>0.0 {
+                // Cohort mouths eat from the same household pools, proportionally.
+                let ids=self.households_near(center,55.0);
+                let total:f32=self.households.iter().filter(|h|ids.contains(&h.id)).map(|h|h.stored_food).sum();
+                if total>0.0 {
+                    for hid in ids {
+                        if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                            h.stored_food-=due*(h.stored_food/total);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn step_history(&mut self) {
+        // Compact before the log's own drain discards deep time silently.
+        while self.causal_log.nodes.len()>1536 {
+            let chunk:Vec<(f64,CausalNode)>=self.causal_log.nodes.drain(0..512.min(self.causal_log.nodes.len())).collect();
+            if chunk.is_empty(){break;}
+            self.eras.push(compact(&chunk));
         }
     }
 }

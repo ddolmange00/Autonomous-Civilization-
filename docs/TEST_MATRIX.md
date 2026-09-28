@@ -24,3 +24,10 @@ Key invariants:
 - extinction is allowed
 - failed experiments change evidence, not physical truth
 - rendering state never changes simulation truth
+
+Long-run invariants (100-year smoke):
+- represented population never drops below simulated alive
+- cohort counts stay finite and non-negative
+- eras compact instead of discarding (eras grow with runtime)
+- civilizations re-derive from lineage/contact, never assigned
+- rich preset sustains at least as many alive as arid
