@@ -17,8 +17,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Core and scenario tests
         run: cargo test -p sim-core -p scenario-runner --all-targets
-      - name: Emergence smoke
+      - name: Early emergence smoke
         run: cargo run -p scenario-runner --quiet -- 5 2 847291 5
+      - name: Generational emergence smoke
+        run: cargo run -p scenario-runner --quiet -- 20 2 847291 5
 
   viewer:
     needs: core
