@@ -355,7 +355,8 @@ impl Sandbox {
             if chosen.action==ActionPrimitive::Gather {
                 if let Some(hid)=r.life.kinship.household {
                     if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
-                        let storage:f32=snapshot_structures.iter().filter(|s|s.household_id==hid&&s.integrity>0.2)
+                        let home=h.home;
+                        let storage:f32=snapshot_structures.iter().filter(|s|s.household_id==hid&&s.integrity>0.2&&dist(s.position,home)<35.0)
                             .map(|s|s.capabilities().storage).sum();
                         let food_cap=80.0+storage*260.0;
                         let material_cap=35.0+storage*180.0;
@@ -724,14 +725,14 @@ impl Sandbox {
         let alive:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0).collect();
         let positions:Vec<Position>=alive.iter().map(|r|r.position).collect();
         let resident_ids:Vec<u64>=alive.iter().map(|r|r.id).collect();
-        let clusters=detect_settlements(&positions,65.0,4);
+        let clusters=detect_settlements(&positions,75.0,4);
         let previous_membership:BTreeMap<u64,u64>=self.settlements.iter().flat_map(|s|s.members.iter().map(move |id|(*id,s.id))).collect();
         let mut seen:BTreeSet<u64>=BTreeSet::new();
 
         for cluster in clusters {
             let ids=cluster_member_ids(&cluster,&resident_ids);
             let idx=self.settlements.iter().enumerate().filter(|(_,s)|!seen.contains(&s.id)).filter_map(|(i,s)|{
-                let d=dist(cluster.center,s.center);(d<=90.0).then_some((i,d))
+                let d=dist(cluster.center,s.center);(d<=120.0).then_some((i,d))
             }).min_by(|a,b|a.1.total_cmp(&b.1)).map(|x|x.0);
             let si=if let Some(i)=idx {i} else {
                 let mut ancestry:BTreeMap<u64,usize>=BTreeMap::new();
