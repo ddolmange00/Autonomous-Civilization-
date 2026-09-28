@@ -1,5 +1,4 @@
 use sim_core::{
-    agency::Traits,
     generation::{conception_propensity,ReproductionContext},
     life_history::{LifeStage,Sex},
     relationships::Relation,

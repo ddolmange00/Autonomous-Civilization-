@@ -1,4 +1,4 @@
-use sim_core::{affordances::FeatureKind,sandbox::{Sandbox,SandboxFeature},world::Position};
+use sim_core::{affordances::FeatureKind,sandbox::Sandbox};
 
 #[test]
 fn sandbox_contains_real_deep_water_barrier_features() {

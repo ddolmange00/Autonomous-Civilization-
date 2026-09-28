@@ -101,7 +101,7 @@ pub fn work_value(action:ActionPrimitive,skill:f32,days:f32)->f32 {
         ActionPrimitive::Experiment=>0.30,
         _=>0.0,
     };
-    base*(0.35+skill.clamp(0.0,1.0)*0.9)*days.max(0.0)
+    base*1.4*(0.35+skill.clamp(0.0,1.0)*0.9)*days.max(0.0)
 }
 
 pub fn integrity_from(design:&DesignGenome,build_skill:f32,material_ratio:f32)->f32 {

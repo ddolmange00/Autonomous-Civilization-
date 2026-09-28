@@ -115,8 +115,8 @@ impl Sandbox {
             let capacity=18.0+unit(seed,880+i)*26.0;
             features.push(SandboxFeature{id,kind:FeatureKind::Vegetation,
                 position:Position{x:-220.0+unit(seed,500+i)*440.0,y:-160.0+unit(seed,700+i)*320.0},
-                danger:0.02,food:0.12+unit(seed,900+i)*0.25,material:0.5,
-                quantity:capacity*(0.55+unit(seed,960+i)*0.40),capacity,regeneration_per_day:0.0025+unit(seed,980+i)*0.0035}); id+=1;
+                danger:0.02,food:0.35+unit(seed,900+i)*0.45,material:0.9,
+                quantity:capacity*(0.55+unit(seed,960+i)*0.40),capacity,regeneration_per_day:0.05+unit(seed,980+i)*0.07}); id+=1;
         }
         for i in 0..16u64 {
             let capacity=10.0+unit(seed,1010+i)*28.0;
@@ -211,9 +211,12 @@ impl Sandbox {
         let mut social_effects:Vec<(u64,u64,ActionPrimitive)>=Vec::new();
         let mut construction_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
         let mut maintenance_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
-        let mut harvests:Vec<(u64,u64,f32)>=Vec::new();
+        let mut harvests:Vec<(u64,Option<u64>,u64,f32)>=Vec::new();
         for r in &mut self.residents {
             if r.health<=0.0 { continue; }
+            // Learned values decay so no single action can ratchet into permanent dominance.
+            let decay=(1.0-days*0.004).max(0.0);
+            for v in r.mind.learned_action_value.values_mut(){*v*=decay;}
             r.mind.needs.hunger=(r.mind.needs.hunger+days*0.006).clamp(0.0,1.0);
             r.mind.needs.rest=(r.mind.needs.rest+days*0.002).clamp(0.0,1.0);
             r.mind.needs.resources=if let Some(hid)=r.life.kinship.household {
@@ -298,9 +301,11 @@ impl Sandbox {
                 if let Some(tid)=a.target {
                     if let Some(p)=snapshot_projects.iter().find(|p|p.id==tid) {
                         if r.life.kinship.household==Some(p.household_id) {
+                            // Own-household construction satisfies belonging and material need.
                             a.expected.belonging+=0.14;
+                            if a.action==ActionPrimitive::Move {a.expected.belonging+=0.15;}
                             a.expected.care+=0.08;
-                            if a.action==ActionPrimitive::Carry {a.expected.material+=0.30;}
+                            a.expected.material+=0.55;
                         }
                     }
                     if let Some(s)=snapshot_structures.iter().find(|s|s.id==tid&&s.integrity>0.2) {
@@ -342,11 +347,15 @@ impl Sandbox {
             });
             let mobility=mobility_factor(r.life.stage(self.year));
             if let Some(t)=target {
+                // Purposeful trips to one's own construction site travel faster than wandering.
+                let own_site=chosen.target.and_then(|id|snapshot_projects.iter().find(|p|p.id==id))
+                    .map(|p|Some(p.household_id)==r.life.kinship.household).unwrap_or(false);
+                let stride=if own_site&&chosen.action==ActionPrimitive::Move{1.6}else{1.0};
                 match chosen.action {
                     ActionPrimitive::Avoid=>move_away(&mut r.position,t,days*1.4*mobility,&features),
                     ActionPrimitive::Hide=>move_toward(&mut r.position,t,days*1.15*mobility,&features),
                     ActionPrimitive::Attack=>move_toward(&mut r.position,t,days*1.8*mobility,&features),
-                    ActionPrimitive::Move|ActionPrimitive::Assist=>move_toward(&mut r.position,t,days*0.95*mobility,&features),
+                    ActionPrimitive::Move|ActionPrimitive::Assist=>move_toward(&mut r.position,t,days*0.95*stride*mobility,&features),
                     ActionPrimitive::Communicate=>{
                         if chosen.target.map(|id|snapshot_residents.iter().any(|o|o.id==id)).unwrap_or(false) {
                             move_toward(&mut r.position,t,days*0.75*mobility,&features);
@@ -384,6 +393,8 @@ impl Sandbox {
                 r.knowledge.learn(format!("action::{:?}",chosen.action),value,0.18+chosen.expected.knowledge*0.5);
             }
             if matches!(chosen.action,ActionPrimitive::Observe|ActionPrimitive::Experiment) {
+                // Satisfied curiosity lowers the drive so observation cannot dominate forever.
+                r.mind.needs.curiosity=(r.mind.needs.curiosity-chosen.expected.knowledge*0.35*days.min(1.0)).clamp(0.05,1.0);
                 if let Some(tid)=chosen.target {
                     if let Some(s)=snapshot_structures.iter().find(|s|s.id==tid) {
                         let confidence=if chosen.action==ActionPrimitive::Experiment{0.42}else{0.20};
@@ -392,31 +403,41 @@ impl Sandbox {
                 }
             }
             if chosen.action==ActionPrimitive::Gather {
-                if let (Some(hid),Some(fid))=(r.life.kinship.household,chosen.target) {
+                if let Some(fid)=chosen.target {
                     if features.iter().any(|f|f.id==fid&&matches!(f.kind,FeatureKind::Vegetation|FeatureKind::LooseMaterial)) {
                         let requested=days.max(0.0)*(0.35+capability*0.65);
-                        harvests.push((fid,hid,requested));
+                        harvests.push((fid,r.life.kinship.household,r.id,requested));
                     }
                 }
             }
             r.memory.remember(Episode{year:self.year,action:chosen.action,target:chosen.target,value,surprise:chosen.uncertainty,
                 danger:chosen.expected.physical_risk,social_visibility:0.2});
         }
-        for (feature_id,hid,requested) in harvests {
+        for (feature_id,hid,gatherer_id,requested) in harvests {
             let Some(fi)=self.features.iter().position(|f|f.id==feature_id) else{continue;};
-            let taken=requested.min(self.features[fi].quantity.max(0.0));
+            // Sustainable harvest leaves a regrowth base; desperate gatherers strip it bare.
+            let desperate=self.residents.iter().find(|r|r.id==gatherer_id).map(|r|r.mind.needs.hunger>0.9).unwrap_or(false);
+            let share=if desperate{1.0}else{0.6};
+            let taken=requested.min(self.features[fi].quantity.max(0.0)*share);
             if taken<=0.0{continue;}
             self.features[fi].quantity-=taken;
             let food=self.features[fi].food*taken;
             let material=self.features[fi].material*taken;
-            if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
-                let home=h.home;
-                let storage:f32=self.structures.iter().filter(|s|s.household_id==hid&&s.integrity>0.2&&dist(s.position,home)<35.0)
-                    .map(|s|s.capabilities().storage).sum();
-                let food_cap=80.0+storage*260.0;
-                let material_cap=35.0+storage*180.0;
-                h.stored_food=(h.stored_food+food).min(food_cap);
-                h.shared_material=(h.shared_material+material).min(material_cap);
+            if let Some(hid)=hid {
+                if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                    let home=h.home;
+                    let storage:f32=self.structures.iter().filter(|s|s.household_id==hid&&s.integrity>0.2&&dist(s.position,home)<35.0)
+                        .map(|s|s.capabilities().storage).sum();
+                    let food_cap=80.0+storage*260.0;
+                    let material_cap=35.0+storage*180.0;
+                    h.stored_food=(h.stored_food+food).min(food_cap);
+                    h.shared_material=(h.shared_material+material).min(material_cap);
+                    continue;
+                }
+            }
+            // Household-less foragers eat on the spot instead of starving with full hands.
+            if let Some(r)=self.residents.iter_mut().find(|r|r.id==gatherer_id) {
+                r.mind.needs.hunger=(r.mind.needs.hunger-food*0.9).max(0.0);
             }
         }
 
@@ -433,6 +454,15 @@ impl Sandbox {
             let workspace=self.structures.iter().filter(|s|s.integrity>0.2&&dist(s.position,self.projects[pi].position)<28.0)
                 .map(|s|s.capabilities().workspace).fold(0.0_f32,f32::max);
             let work=work_value(action,skill,days.min(2.0))*(1.0+workspace*0.35);
+            // Builders haul their own materials as they work; dedicated Carry trips move more.
+            if action!=ActionPrimitive::Carry {
+                let hid=self.projects[pi].household_id;
+                let remaining=(self.projects[pi].material_required-self.projects[pi].material_committed).max(0.0);
+                if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                    let haul=(work*0.35).min(h.shared_material).min(remaining);
+                    h.shared_material-=haul;self.projects[pi].material_committed+=haul;
+                }
+            }
             let before=(self.projects[pi].progress/self.projects[pi].required_work.max(0.1)).clamp(0.0,1.0);
             self.projects[pi].progress+=work;
             let after=(self.projects[pi].progress/self.projects[pi].required_work.max(0.1)).clamp(0.0,1.0);
@@ -475,6 +505,8 @@ impl Sandbox {
                     let care=0.008+actor.mind.traits.empathy*0.020;
                     target.mind.needs.hunger=(target.mind.needs.hunger-care*days).max(0.0);
                     target.mind.needs.safety=(target.mind.needs.safety-care*0.6*days).max(0.0);
+                    target.mind.needs.care=(target.mind.needs.care-care*1.2*days).max(0.0);
+                    actor.mind.needs.belonging=(actor.mind.needs.belonging-0.08*days.min(1.0)).max(0.05);
                     actor.life.social.observe_help(target.id,(care*10.0).clamp(0.0,1.0));
                     target.life.social.observe_help(actor.id,(care*12.0).clamp(0.0,1.0));
                 }
@@ -482,6 +514,9 @@ impl Sandbox {
                     let at=actor.mind.traits;let tt=target.mind.traits;
                     spend_time(actor.life.social.relation_mut(target.id),days.min(1.0)*2.0,at,tt);
                     spend_time(target.life.social.relation_mut(actor.id),days.min(1.0)*2.0,tt,at);
+                    // Conversation satiates belonging so socializing cannot dominate forever.
+                    actor.mind.needs.belonging=(actor.mind.needs.belonging-0.12*days.min(1.0)).max(0.05);
+                    target.mind.needs.belonging=(target.mind.needs.belonging-0.12*days.min(1.0)).max(0.05);
                 }
                 _=>{}
             }
@@ -590,6 +625,8 @@ impl Sandbox {
         self.step_social_generation(days);
         self.step_construction(days);
         self.update_settlement_identities();
+        // Hunting: killing an animal yields meat for the hunter's household, or the hunter.
+        let mut hunt_kills:Vec<(u64,Option<u64>,u64,f32)>=Vec::new();
         for r in &mut self.residents {
             if r.current_action==ActionPrimitive::Attack {
                 for m in &mut self.monsters {
@@ -597,7 +634,29 @@ impl Sandbox {
                         m.health=(m.health-(0.01+0.025*r.mind.traits.aggression)*days).max(0.0);
                     }
                 }
+                for a in &mut self.animals {
+                    if a.health>0.0 && dist(r.position,a.position)<9.0 {
+                        a.health=(a.health-(0.02+0.05*r.mind.traits.aggression)*days).max(0.0);
+                        if a.health<=0.0 {
+                            hunt_kills.push((r.id,r.life.kinship.household,a.id,6.0+a.archetype.body_mass_kg*0.02));
+                        }
+                    }
+                }
             }
+        }
+        for (rid,hid,aid,meat) in hunt_kills {
+            let mut stored=false;
+            if let Some(hid)=hid {
+                if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                    h.stored_food+=meat;stored=true;
+                }
+            }
+            if !stored {
+                if let Some(r)=self.residents.iter_mut().find(|r|r.id==rid) {
+                    r.mind.needs.hunger=(r.mind.needs.hunger-meat*0.06).max(0.0);
+                }
+            }
+            self.causal_log.push(self.year,CausalNode::Outcome{resident_id:Some(rid),label:format!("hunted animal {aid}"),value:meat});
         }
     }
     fn step_social_generation(&mut self, days:f32) {
@@ -736,6 +795,12 @@ impl Sandbox {
                 let eaten=demand.min(h.stored_food);
                 h.stored_food-=eaten;
                 r.mind.needs.hunger=(r.mind.needs.hunger-eaten*0.9).max(0.0);
+                // Prolonged near-max hunger damages health; adequate feeding slowly heals.
+                if r.mind.needs.hunger>0.90 {
+                    r.health=(r.health-(r.mind.needs.hunger-0.90)*0.008*days).max(0.0);
+                } else if r.mind.needs.hunger<0.35 {
+                    r.health=(r.health+0.003*days).min(1.0);
+                }
             }
         }
 
@@ -853,7 +918,7 @@ impl Sandbox {
             }).sum::<f32>()/members.len() as f32;
             let strength=proposal_strength(safety,rest,skill,h.shared_material);
             let temperament=0.75+unit(self.seed,h.id.wrapping_mul(5_000_011))*0.50;
-            let increment=strength*days.max(0.0)/90.0*temperament;
+            let increment=strength*days.max(0.0)/45.0*temperament;
             drive_updates.push((h.id,h.home,skill,increment));
         }
         for (hid,home,skill,increment) in drive_updates {
@@ -884,9 +949,9 @@ impl Sandbox {
                 seed_shelter_design(id,None,0,skill,available)
             };
             let required_material=(16.0+design.length_m*design.width_m*1.6).clamp(14.0,45.0);
-            let required_work=(18.0+design.length_m*design.width_m*2.2).clamp(18.0,60.0);
+            let required_work=(10.0+design.length_m*design.width_m*1.2).clamp(10.0,32.0);
             let initial=if let Some(h)=self.households.iter_mut().find(|h|h.id==hid){
-                let x=h.shared_material.min(required_material*0.25);h.shared_material-=x;x
+                let x=h.shared_material.min(required_material*0.10);h.shared_material-=x;x
             }else{0.0};
             self.projects.push(ConstructionProject{id,household_id:hid,position:pos,design,progress:0.0,required_work,
                 material_committed:initial,material_required:required_material,started_year:self.year});

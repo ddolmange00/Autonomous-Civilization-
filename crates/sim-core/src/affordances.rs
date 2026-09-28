@@ -34,7 +34,7 @@ pub fn generate(features:&[PerceivedFeature], cap:LocalCapabilities)->Vec<Afford
     let mut out=Vec::new();
     for &f in features {
         let reachable=f.distance_m<=cap.reach_m.max(0.5);
-        push(&mut out,ActionPrimitive::Observe,f,ExpectedOutcome{knowledge:0.35,physical_risk:f.danger*0.15,..Default::default()});
+        push(&mut out,ActionPrimitive::Observe,f,ExpectedOutcome{knowledge:0.15,effort:0.05,physical_risk:f.danger*0.15,..Default::default()});
         if !reachable {
             match f.kind {
                 FeatureKind::Vegetation=>push(&mut out,ActionPrimitive::Move,f,ExpectedOutcome{food:f.food_hint*0.45,material:f.material_hint*0.25,effort:0.08,..Default::default()}),
@@ -102,8 +102,9 @@ pub fn generate(features:&[PerceivedFeature], cap:LocalCapabilities)->Vec<Afford
                 }
             }
             FeatureKind::ConstructionSite => {
-                push(&mut out,ActionPrimitive::Bind,f,ExpectedOutcome{safety:0.14,rest:0.06,knowledge:0.08,status:0.04,effort:0.16,..Default::default()});
-                push(&mut out,ActionPrimitive::Raise,f,ExpectedOutcome{safety:0.18,rest:0.08,knowledge:0.09,status:0.05,physical_risk:0.05,effort:0.22,..Default::default()});
+                // Shelter work pays safety and rest: a roof is protection, not decoration.
+                push(&mut out,ActionPrimitive::Bind,f,ExpectedOutcome{safety:0.34,rest:0.14,knowledge:0.08,status:0.04,effort:0.16,..Default::default()});
+                push(&mut out,ActionPrimitive::Raise,f,ExpectedOutcome{safety:0.42,rest:0.18,knowledge:0.09,status:0.05,physical_risk:0.05,effort:0.22,..Default::default()});
                 push(&mut out,ActionPrimitive::Dig,f,ExpectedOutcome{safety:0.08,knowledge:0.05,effort:0.20/(0.2+cap.digging),..Default::default()});
                 if cap.carrying>0.05 {push(&mut out,ActionPrimitive::Carry,f,ExpectedOutcome{safety:0.08,material:0.55,status:0.02,effort:0.16/(0.2+cap.carrying),..Default::default()});}
                 push(&mut out,ActionPrimitive::Experiment,f,ExpectedOutcome{knowledge:0.16,effort:0.08,..Default::default()});
