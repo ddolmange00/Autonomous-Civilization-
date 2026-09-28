@@ -163,9 +163,21 @@ impl Sandbox {
             let a=unit(self.seed,id*3)*std::f32::consts::TAU;let r=unit(self.seed,id*3+1)*32.0;
             let capacity=18.0+unit(self.seed,id*7+4)*26.0;
             self.features.push(SandboxFeature{id,kind:FeatureKind::Vegetation,position:Position{x:position.x+a.cos()*r,y:position.y+a.sin()*r},
-                danger:0.02,food:0.12+unit(self.seed,id*3+2)*0.25,material:0.5,
-                quantity:capacity*0.80,capacity,regeneration_per_day:0.0025+unit(self.seed,id*7+5)*0.0035});
+                danger:0.02,food:0.35+unit(self.seed,id*3+2)*0.45,material:0.9,
+                quantity:capacity*0.80,capacity,regeneration_per_day:0.05+unit(self.seed,id*7+5)*0.07});
         }
+    }
+    pub fn raise_rock_at(&mut self, position:Position, radius:f32) {
+        let id=self.next_id;self.next_id+=1;
+        self.features.push(SandboxFeature{id,kind:FeatureKind::RockFace,position,
+            danger:0.08,food:0.0,material:0.8,quantity:120.0,capacity:120.0,regeneration_per_day:0.0});
+        self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:format!("god raised rock (r={radius:.0})")});
+    }
+    pub fn dig_water_at(&mut self, position:Position, radius:f32) {
+        let id=self.next_id;self.next_id+=1;
+        self.features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,position,
+            danger:0.65,food:0.0,material:0.0,quantity:1.0,capacity:1.0,regeneration_per_day:0.0});
+        self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:format!("god dug water (r={radius:.0})")});
     }
     pub fn deposit_minerals_at(&mut self, position:Position, count:u32) {
         for _ in 0..count {

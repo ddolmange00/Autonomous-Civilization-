@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::PrimaryWindow};
-use sim_core::{causal_log::CausalNode,affordances::FeatureKind, awareness::SituationKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{AnchorKind,MonsterBlueprint,PixelAnchor,PixelCell,PixelSkin}, pixel_animation::{anchored_pixel_offset,body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, settlement_detection::detect_settlements, world::Position};
+use sim_core::{causal_log::CausalNode,affordances::FeatureKind, events::WorldEventKind, sandbox::Sandbox, blueprint_library::BlueprintLibrary, blueprints::{AnchorKind,MonsterBlueprint,PixelCell,PixelSkin}, pixel_animation::{anchored_pixel_offset,body_transform,pixel_offset}, species::{AnimalArchetype,MonsterArchetype}, world::Position};
 
 #[derive(Component)] struct WorldCamera;
 #[derive(Component)] struct ResidentSprite(u64);
@@ -27,7 +27,7 @@ use sim_core::{causal_log::CausalNode,affordances::FeatureKind, awareness::Situa
 impl GodTool { fn category(self)->ToolCategory { match self {
     Self::Inspect=>ToolCategory::Observe,
     Self::Resident|Self::Animal|Self::Monster=>ToolCategory::Life,
-    Self::Vegetation|Self::Mineral|Self::Rain|Self::Drought=>ToolCategory::Nature,
+    Self::Vegetation|Self::Mineral|Self::Rock|Self::Water|Self::Rain|Self::Drought=>ToolCategory::Nature,
     Self::Fire|Self::Flood|Self::Earthquake=>ToolCategory::Disaster,
 } } }
 
@@ -35,11 +35,11 @@ impl GodTool { fn category(self)->ToolCategory { match self {
 enum Selected { Resident(u64), Animal(u64), Monster(u64), Project(u64), Structure(u64), Settlement }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-enum GodTool { Inspect, Resident, Animal, Monster, Vegetation, Mineral, Rain, Drought, Fire, Flood, Earthquake }
+enum GodTool { Inspect, Resident, Animal, Monster, Vegetation, Mineral, Rock, Water, Rain, Drought, Fire, Flood, Earthquake }
 impl GodTool { fn label(self)->&'static str { match self {
     Self::Inspect=>"INSPECT",Self::Resident=>"RESIDENT",Self::Animal=>"ANIMAL",Self::Monster=>"MONSTER",
-    Self::Vegetation=>"VEGETATION",Self::Mineral=>"MINERAL",Self::Rain=>"RAIN",Self::Drought=>"DROUGHT",
-    Self::Fire=>"FIRE",Self::Flood=>"FLOOD",Self::Earthquake=>"QUAKE"
+    Self::Vegetation=>"VEGETATION",Self::Mineral=>"MINERAL",Self::Rock=>"ROCK",Self::Water=>"WATER",
+    Self::Rain=>"RAIN",Self::Drought=>"DROUGHT",Self::Fire=>"FIRE",Self::Flood=>"FLOOD",Self::Earthquake=>"QUAKE"
 } } }
 
 #[derive(Resource)]
@@ -109,7 +109,8 @@ fn setup(mut commands:Commands,state:Res<ViewerState>) {
     },BackgroundColor(Color::srgba(0.035,0.045,0.038,0.88)))).with_children(|p|{
         for (tool,label) in [
             (GodTool::Inspect,"OBS"),(GodTool::Resident,"HUM"),(GodTool::Animal,"ANI"),(GodTool::Monster,"MON"),
-            (GodTool::Vegetation,"VEG"),(GodTool::Mineral,"ORE"),(GodTool::Rain,"RAN"),(GodTool::Drought,"DRY"),
+            (GodTool::Vegetation,"VEG"),(GodTool::Mineral,"ORE"),(GodTool::Rock,"ROK"),(GodTool::Water,"WTR"),
+            (GodTool::Rain,"RAN"),(GodTool::Drought,"DRY"),
             (GodTool::Fire,"FIR"),(GodTool::Flood,"FLD"),(GodTool::Earthquake,"QUK")
         ] {
             p.spawn((Button,Node{width:px(44),height:px(34),justify_content:JustifyContent::Center,align_items:AlignItems::Center,..default()},
@@ -232,7 +233,7 @@ fn controls(
     if keys.just_pressed(KeyCode::KeyB){state.monster.aggression=(state.monster.aggression-0.1).max(0.0);}
     if keys.just_pressed(KeyCode::KeyP){state.monster.aggression=(state.monster.aggression+0.1).min(1.0);}
     if keys.just_pressed(KeyCode::KeyL){state.monster_lab=!state.monster_lab;state.monster_blueprint.archetype=state.monster;}
-    if keys.just_pressed(KeyCode::KeySemicolon){state.monster_mirror=!state.monster_mirror;}
+    if keys.just_pressed(KeyCode::Semicolon){state.monster_mirror=!state.monster_mirror;}
     if keys.just_pressed(KeyCode::KeyE){state.monster_emissive=!state.monster_emissive;}
     if keys.just_pressed(KeyCode::F1)&&state.monster_lab{state.anchor_mode=Some(AnchorKind::Head);}
     if keys.just_pressed(KeyCode::F2)&&state.monster_lab{state.anchor_mode=Some(AnchorKind::Eye);}
@@ -248,7 +249,7 @@ fn controls(
     if keys.just_pressed(KeyCode::F6)&&state.monster_lab{state.monster_blueprint.skin=state.monster_blueprint.skin.resize_nearest(16,16);}
     if keys.just_pressed(KeyCode::F7)&&state.monster_lab{state.monster_blueprint.skin=state.monster_blueprint.skin.resize_nearest(24,24);}
     if keys.just_pressed(KeyCode::F8)&&state.monster_lab{state.monster_blueprint.skin=state.monster_blueprint.skin.resize_nearest(32,32);}
-    if keys.just_pressed(KeyCode::F9)&&state.monster_lab{state.monster_blueprint.archetype=state.monster;state.blueprint_library.save(state.monster_blueprint.clone());}
+    if keys.just_pressed(KeyCode::F9)&&state.monster_lab{let arch=state.monster;state.monster_blueprint.archetype=arch;let bp=state.monster_blueprint.clone();state.blueprint_library.save(bp);}
     if keys.just_pressed(KeyCode::F10)&&state.monster_lab&&!state.blueprint_library.monsters.is_empty(){let next=state.blueprint_library.monsters.iter().position(|b|b.id==state.monster_blueprint.id).map(|i|(i+1)%state.blueprint_library.monsters.len()).unwrap_or(0);state.monster_blueprint=state.blueprint_library.monsters[next].clone();state.monster=state.monster_blueprint.archetype;}
     if keys.just_pressed(KeyCode::F11)&&state.monster_lab&&!state.blueprint_library.monsters.is_empty(){let prev=state.blueprint_library.monsters.iter().position(|b|b.id==state.monster_blueprint.id).map(|i|(i+state.blueprint_library.monsters.len()-1)%state.blueprint_library.monsters.len()).unwrap_or(0);state.monster_blueprint=state.blueprint_library.monsters[prev].clone();state.monster=state.monster_blueprint.archetype;}
     if state.monster_lab {
@@ -424,7 +425,7 @@ fn tool_preview(
     let Ok((mut t,mut sprite,mut vis))=preview.single_mut() else{return;};
     if state.tool==GodTool::Inspect { *vis=Visibility::Hidden; return; }
     *vis=Visibility::Visible; t.translation.x=world.x;t.translation.y=world.y;
-    let radius=match state.tool {GodTool::Resident|GodTool::Animal|GodTool::Monster=>12.0,GodTool::Vegetation|GodTool::Mineral=>32.0,_=>state.tool_radius};
+    let radius=match state.tool {GodTool::Resident|GodTool::Animal|GodTool::Monster=>12.0,GodTool::Vegetation|GodTool::Mineral=>32.0,GodTool::Rock|GodTool::Water=>state.tool_radius,_=>state.tool_radius};
     sprite.custom_size=Some(Vec2::splat(radius*2.0));
     sprite.color=match state.tool {
         GodTool::Fire=>Color::srgba(0.95,0.25,0.08,0.13),
@@ -436,6 +437,8 @@ fn tool_preview(
         GodTool::Animal=>Color::srgba(0.70,0.62,0.42,0.15),
         GodTool::Vegetation=>Color::srgba(0.15,0.55,0.18,0.13),
         GodTool::Mineral=>Color::srgba(0.55,0.48,0.35,0.15),
+        GodTool::Rock=>Color::srgba(0.45,0.45,0.40,0.18),
+        GodTool::Water=>Color::srgba(0.10,0.34,0.55,0.20),
         _=>Color::srgba(0.95,0.90,0.65,0.10),
     };
 }
@@ -451,7 +454,14 @@ fn world_click(
     let Ok((cam,global,cam_t))=camera.single() else{return;};
     let Ok(world)=cam.viewport_to_world_2d(global,cursor) else{return;};
     let p=Position{x:world.x,y:world.y};
-    match state.tool {
+    let tool=state.tool;
+    let animal=state.animal;
+    let monster=state.monster;
+    let skin=state.monster_blueprint.skin.clone();
+    let blueprint=state.monster_blueprint.clone();
+    let intensity=state.tool_intensity;
+    let radius=state.tool_radius;
+    match tool {
         GodTool::Inspect=>{
             let threshold=18.0*cam_t.scale.x; let mut best:(f32,Option<Selected>)=(threshold,None);
             for r in &state.sim.residents {let d=world.distance(Vec2::new(r.position.x,r.position.y));if d<best.0{best=(d,Some(Selected::Resident(r.id)));}}
@@ -462,12 +472,14 @@ fn world_click(
             state.selected=best.1;
         }
         GodTool::Resident=>state.sim.spawn_resident_at(p),
-        GodTool::Animal=>state.sim.spawn_animal_with(p,state.animal),
-        GodTool::Monster=>state.sim.spawn_monster_with(p,state.monster,Some(state.monster_blueprint.skin.clone()),Some(state.monster_blueprint.clone())),
-        GodTool::Vegetation=>state.sim.grow_vegetation_at(p,(8.0+state.tool_intensity*12.0) as u32),
-        GodTool::Mineral=>state.sim.deposit_minerals_at(p,(4.0+state.tool_intensity*7.0) as u32),
+        GodTool::Animal=>state.sim.spawn_animal_with(p,animal),
+        GodTool::Monster=>state.sim.spawn_monster_with(p,monster,Some(skin),Some(blueprint)),
+        GodTool::Vegetation=>state.sim.grow_vegetation_at(p,(8.0+intensity*12.0) as u32),
+        GodTool::Mineral=>state.sim.deposit_minerals_at(p,(4.0+intensity*7.0) as u32),
+        GodTool::Rock=>state.sim.raise_rock_at(p,radius),
+        GodTool::Water=>state.sim.dig_water_at(p,radius),
         GodTool::Rain|GodTool::Drought|GodTool::Fire|GodTool::Flood|GodTool::Earthquake=>{
-            let (kind,duration,color)=match state.tool {
+            let (kind,duration,color)=match tool {
                 GodTool::Rain=>(WorldEventKind::Rain,18.0,Color::srgba(0.30,0.55,0.85,0.12)),
                 GodTool::Drought=>(WorldEventKind::Drought,90.0,Color::srgba(0.78,0.62,0.25,0.13)),
                 GodTool::Fire=>(WorldEventKind::Fire,24.0,Color::srgba(0.95,0.25,0.08,0.20)),
@@ -497,7 +509,7 @@ fn update_ui(
     if let Ok(mut t)=tool.single_mut(){t.0=format!("GOD DOCK  [I] Inspect [H] Human [Z] Animal [M] Monster [T] Trees [O] Ore [N] Rain [X] Drought [F] Fire [G] Flood [Q] Quake\nACTIVE: {}   radius {:.0}   intensity {:.1}   [[ / ]] radius   [, / .] power",state.tool.label(),state.tool_radius,state.tool_intensity);}
     if let Ok(mut t)=context.single_mut(){
         let cat=match state.tool.category(){ToolCategory::Observe=>"OBSERVE",ToolCategory::Life=>"LIFE",ToolCategory::Nature=>"NATURE",ToolCategory::Disaster=>"DISASTER"};
-        let hint=match state.tool {GodTool::Inspect=>"click an entity",GodTool::Resident=>"spawn autonomous resident",GodTool::Animal=>"spawn wildlife",GodTool::Monster=>"spawn hostile pressure",GodTool::Vegetation=>"grow local vegetation",GodTool::Mineral=>"deposit material patch",GodTool::Rain=>"local rainfall event",GodTool::Drought=>"local water stress",GodTool::Fire=>"local fire pressure",GodTool::Flood=>"local flood pressure",GodTool::Earthquake=>"local seismic pressure"};
+        let hint=match state.tool {GodTool::Inspect=>"click an entity",GodTool::Resident=>"spawn autonomous resident",GodTool::Animal=>"spawn wildlife",GodTool::Monster=>"spawn hostile pressure",GodTool::Vegetation=>"grow local vegetation",GodTool::Mineral=>"deposit material patch",GodTool::Rock=>"raise rock barrier",GodTool::Water=>"dig deep-water pool",GodTool::Rain=>"local rainfall event",GodTool::Drought=>"local water stress",GodTool::Fire=>"local fire pressure",GodTool::Flood=>"local flood pressure",GodTool::Earthquake=>"local seismic pressure"};
         t.0=if state.tool==GodTool::Monster {
             format!("{} / {}\n{}\nMASS {:.0}kg [J/K]  SPEED {:.2} [U/Y]\nAGGR {:.2} [B/P]  armor {:.2}  intel {:.2}",cat,state.tool.label(),hint,state.monster.body_mass_kg,state.monster.speed,state.monster.aggression,state.monster.armor,state.monster.intelligence)
         } else if state.tool==GodTool::Animal {
