@@ -343,8 +343,15 @@ impl Sandbox {
             let mobility=mobility_factor(r.life.stage(self.year));
             if let Some(t)=target {
                 match chosen.action {
-                    ActionPrimitive::Avoid|ActionPrimitive::Hide=>move_away(&mut r.position,t,days*1.4*mobility,&features),
+                    ActionPrimitive::Avoid=>move_away(&mut r.position,t,days*1.4*mobility,&features),
+                    ActionPrimitive::Hide=>move_toward(&mut r.position,t,days*1.15*mobility,&features),
                     ActionPrimitive::Attack=>move_toward(&mut r.position,t,days*1.8*mobility,&features),
+                    ActionPrimitive::Move|ActionPrimitive::Assist=>move_toward(&mut r.position,t,days*0.95*mobility,&features),
+                    ActionPrimitive::Communicate=>{
+                        if chosen.target.map(|id|snapshot_residents.iter().any(|o|o.id==id)).unwrap_or(false) {
+                            move_toward(&mut r.position,t,days*0.75*mobility,&features);
+                        }
+                    }
                     ActionPrimitive::Gather|ActionPrimitive::Carry|ActionPrimitive::Observe|ActionPrimitive::Experiment|
                     ActionPrimitive::Dig|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Bind|ActionPrimitive::Raise=>move_toward(&mut r.position,t,days*0.7*mobility,&features),
                     _=>{}
