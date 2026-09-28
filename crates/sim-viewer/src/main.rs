@@ -284,13 +284,13 @@ fn tick_sim(time:Res<Time>,mut state:ResMut<ViewerState>) {
 
 fn sync_world(
     mut commands:Commands,state:Res<ViewerState>,
-    mut residents:Query<(Entity,&ResidentSprite,&mut Transform,&mut Sprite)>,
-    mut monsters:Query<(Entity,&MonsterSprite,&mut Transform,&mut Sprite)>,
-    mut animals:Query<(Entity,&AnimalSprite,&mut Transform,&mut Sprite)>,
-    mut monster_pixels:Query<(&MonsterPixel,&mut Transform)>,
-    mut features:Query<(Entity,&FeatureSprite,&mut Transform,&mut Sprite)>,
-    mut projects:Query<(Entity,&ProjectSprite,&mut Transform,&mut Sprite)>,
-    mut structures:Query<(Entity,&StructureSprite,&mut Transform,&mut Sprite)>,
+    mut residents:Query<(Entity,&ResidentSprite,&mut Transform,&mut Sprite),(Without<MonsterSprite>,Without<AnimalSprite>,Without<MonsterPixel>,Without<FeatureSprite>,Without<ProjectSprite>,Without<StructureSprite>)>,
+    mut monsters:Query<(Entity,&MonsterSprite,&mut Transform,&mut Sprite),(Without<ResidentSprite>,Without<AnimalSprite>,Without<MonsterPixel>,Without<FeatureSprite>,Without<ProjectSprite>,Without<StructureSprite>)>,
+    mut animals:Query<(Entity,&AnimalSprite,&mut Transform,&mut Sprite),(Without<ResidentSprite>,Without<MonsterSprite>,Without<MonsterPixel>,Without<FeatureSprite>,Without<ProjectSprite>,Without<StructureSprite>)>,
+    mut monster_pixels:Query<(&MonsterPixel,&mut Transform),(Without<ResidentSprite>,Without<MonsterSprite>,Without<AnimalSprite>,Without<FeatureSprite>,Without<ProjectSprite>,Without<StructureSprite>)>,
+    mut features:Query<(Entity,&FeatureSprite,&mut Transform,&mut Sprite),(Without<ResidentSprite>,Without<MonsterSprite>,Without<AnimalSprite>,Without<MonsterPixel>,Without<ProjectSprite>,Without<StructureSprite>)>,
+    mut projects:Query<(Entity,&ProjectSprite,&mut Transform,&mut Sprite),(Without<ResidentSprite>,Without<MonsterSprite>,Without<AnimalSprite>,Without<MonsterPixel>,Without<FeatureSprite>,Without<StructureSprite>)>,
+    mut structures:Query<(Entity,&StructureSprite,&mut Transform,&mut Sprite),(Without<ResidentSprite>,Without<MonsterSprite>,Without<AnimalSprite>,Without<MonsterPixel>,Without<FeatureSprite>,Without<ProjectSprite>)>,
     overlays:Query<(Entity,&EventOverlay)>,
 ) {
     let existing_residents:Vec<u64>=residents.iter().map(|(_,r,_,_)|r.0).collect();
