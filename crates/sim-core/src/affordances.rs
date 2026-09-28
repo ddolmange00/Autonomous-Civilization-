@@ -3,7 +3,7 @@ use crate::agency::{ActionPrimitive, Affordance, ExpectedOutcome};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FeatureKind {
     Vegetation, LooseMaterial, Soil, RockFace, ShallowWater, DeepWater,
-    HeatSource, Creature, Shelter, ConstructedObject,
+    HeatSource, Creature, Shelter, ConstructedObject, ConstructionSite,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -77,6 +77,13 @@ pub fn generate(features:&[PerceivedFeature], cap:LocalCapabilities)->Vec<Afford
             FeatureKind::Shelter | FeatureKind::ConstructedObject => {
                 push(&mut out,ActionPrimitive::Hide,f,ExpectedOutcome{safety:0.25,rest:0.08,..Default::default()});
                 push(&mut out,ActionPrimitive::Experiment,f,ExpectedOutcome{knowledge:0.15,..Default::default()});
+            }
+            FeatureKind::ConstructionSite => {
+                push(&mut out,ActionPrimitive::Bind,f,ExpectedOutcome{safety:0.14,knowledge:0.08,status:0.04,effort:0.16,..Default::default()});
+                push(&mut out,ActionPrimitive::Raise,f,ExpectedOutcome{safety:0.18,knowledge:0.09,status:0.05,physical_risk:0.05,effort:0.22,..Default::default()});
+                push(&mut out,ActionPrimitive::Dig,f,ExpectedOutcome{safety:0.08,knowledge:0.05,effort:0.20/(0.2+cap.digging),..Default::default()});
+                if cap.carrying>0.05 {push(&mut out,ActionPrimitive::Carry,f,ExpectedOutcome{safety:0.08,status:0.02,effort:0.16/(0.2+cap.carrying),..Default::default()});}
+                push(&mut out,ActionPrimitive::Experiment,f,ExpectedOutcome{knowledge:0.16,effort:0.08,..Default::default()});
             }
         }
     }
