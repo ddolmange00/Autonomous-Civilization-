@@ -50,6 +50,7 @@ pub struct SandboxMonster {
 pub struct SandboxFeature {
     pub id:u64, pub kind:FeatureKind, pub position:Position,
     pub danger:f32, pub food:f32, pub material:f32,
+    pub quantity:f32, pub capacity:f32, pub regeneration_per_day:f32,
 }
 
 #[derive(Clone, Debug)]
@@ -111,18 +112,20 @@ impl Sandbox {
         }
         let mut features=Vec::new(); let mut id=10_000u64;
         for i in 0..42u64 {
+            let capacity=18.0+unit(seed,880+i)*26.0;
             features.push(SandboxFeature{id,kind:FeatureKind::Vegetation,
                 position:Position{x:-220.0+unit(seed,500+i)*440.0,y:-160.0+unit(seed,700+i)*320.0},
-                danger:0.02,food:0.12+unit(seed,900+i)*0.25,material:0.5}); id+=1;
+                danger:0.02,food:0.12+unit(seed,900+i)*0.25,material:0.5,
+                quantity:capacity*(0.55+unit(seed,960+i)*0.40),capacity,regeneration_per_day:0.018+unit(seed,980+i)*0.018}); id+=1;
         }
         for i in 0..18u64 {
             features.push(SandboxFeature{id,kind:FeatureKind::RockFace,
                 position:Position{x:70.0+unit(seed,1100+i)*180.0,y:-180.0+unit(seed,1300+i)*360.0},
-                danger:0.08,food:0.0,material:0.8}); id+=1;
+                danger:0.08,food:0.0,material:0.8,quantity:120.0,capacity:120.0,regeneration_per_day:0.0}); id+=1;
         }
         for y in -9..=9 {
             features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,
-                position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0}); id+=1;
+                position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0,quantity:1.0,capacity:1.0,regeneration_per_day:0.0}); id+=1;
         }
         Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],projects:vec![],structures:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048,total_written:0},next_id:id}
     }
@@ -151,16 +154,20 @@ impl Sandbox {
         for _ in 0..count {
             let id=self.next_id;self.next_id+=1;
             let a=unit(self.seed,id*3)*std::f32::consts::TAU;let r=unit(self.seed,id*3+1)*32.0;
+            let capacity=18.0+unit(self.seed,id*7+4)*26.0;
             self.features.push(SandboxFeature{id,kind:FeatureKind::Vegetation,position:Position{x:position.x+a.cos()*r,y:position.y+a.sin()*r},
-                danger:0.02,food:0.12+unit(self.seed,id*3+2)*0.25,material:0.5});
+                danger:0.02,food:0.12+unit(self.seed,id*3+2)*0.25,material:0.5,
+                quantity:capacity*0.80,capacity,regeneration_per_day:0.018+unit(self.seed,id*7+5)*0.018});
         }
     }
     pub fn deposit_minerals_at(&mut self, position:Position, count:u32) {
         for _ in 0..count {
             let id=self.next_id;self.next_id+=1;
             let a=unit(self.seed,id*5)*std::f32::consts::TAU;let r=unit(self.seed,id*5+1)*24.0;
+            let capacity=12.0+unit(self.seed,id*5+3)*26.0;
             self.features.push(SandboxFeature{id,kind:FeatureKind::LooseMaterial,position:Position{x:position.x+a.cos()*r,y:position.y+a.sin()*r},
-                danger:0.01,food:0.0,material:0.65+unit(self.seed,id*5+2)*0.3});
+                danger:0.01,food:0.0,material:0.65+unit(self.seed,id*5+2)*0.3,
+                quantity:capacity,capacity,regeneration_per_day:0.0});
         }
     }
 
@@ -197,6 +204,7 @@ impl Sandbox {
         let mut social_effects:Vec<(u64,u64,ActionPrimitive)>=Vec::new();
         let mut construction_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
         let mut maintenance_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
+        let mut harvests:Vec<(u64,u64,f32)>=Vec::new();
         for r in &mut self.residents {
             if r.health<=0.0 { continue; }
             r.mind.needs.hunger=(r.mind.needs.hunger+days*0.006).clamp(0.0,1.0);
@@ -226,8 +234,9 @@ impl Sandbox {
             for f in &features {
                 let d=dist(r.position,f.position);
                 if d<=85.0 {
+                    let availability=(f.quantity/f.capacity.max(0.001)).clamp(0.0,1.0);
                     perceived.push(PerceivedFeature{id:f.id,kind:f.kind,distance_m:d,danger:f.danger,
-                        food_hint:f.food,material_hint:f.material,uncertainty:(d/120.0).clamp(0.05,0.8)});
+                        food_hint:f.food*availability,material_hint:f.material*availability,uncertainty:(d/120.0).clamp(0.05,0.8)});
                 }
             }
             for a in &snapshot_animals {
@@ -353,22 +362,34 @@ impl Sandbox {
                 }
             }
             if chosen.action==ActionPrimitive::Gather {
-                if let Some(hid)=r.life.kinship.household {
-                    if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
-                        let home=h.home;
-                        let storage:f32=snapshot_structures.iter().filter(|s|s.household_id==hid&&s.integrity>0.2&&dist(s.position,home)<35.0)
-                            .map(|s|s.capabilities().storage).sum();
-                        let food_cap=80.0+storage*260.0;
-                        let material_cap=35.0+storage*180.0;
-                        let material=chosen.target.and_then(|id|features.iter().find(|f|f.id==id)).map(|f|f.material).unwrap_or(0.0);
-                        h.stored_food=(h.stored_food+chosen.expected.food.max(0.0)*days*2.5).min(food_cap);
-                        h.shared_material=(h.shared_material+material.max(0.0)*days*0.8).min(material_cap);
+                if let (Some(hid),Some(fid))=(r.life.kinship.household,chosen.target) {
+                    if features.iter().any(|f|f.id==fid&&matches!(f.kind,FeatureKind::Vegetation|FeatureKind::LooseMaterial)) {
+                        let requested=days.max(0.0)*(0.35+capability*0.65);
+                        harvests.push((fid,hid,requested));
                     }
                 }
             }
             r.memory.remember(Episode{year:self.year,action:chosen.action,target:chosen.target,value,surprise:chosen.uncertainty,
                 danger:chosen.expected.physical_risk,social_visibility:0.2});
         }
+        for (feature_id,hid,requested) in harvests {
+            let Some(fi)=self.features.iter().position(|f|f.id==feature_id) else{continue;};
+            let taken=requested.min(self.features[fi].quantity.max(0.0));
+            if taken<=0.0{continue;}
+            self.features[fi].quantity-=taken;
+            let food=self.features[fi].food*taken;
+            let material=self.features[fi].material*taken;
+            if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
+                let home=h.home;
+                let storage:f32=self.structures.iter().filter(|s|s.household_id==hid&&s.integrity>0.2&&dist(s.position,home)<35.0)
+                    .map(|s|s.capabilities().storage).sum();
+                let food_cap=80.0+storage*260.0;
+                let material_cap=35.0+storage*180.0;
+                h.stored_food=(h.stored_food+food).min(food_cap);
+                h.shared_material=(h.shared_material+material).min(material_cap);
+            }
+        }
+
         for (project_id,resident_id,action,skill) in construction_work {
             let Some(pi)=self.projects.iter().position(|p|p.id==project_id) else{continue;};
             if action==ActionPrimitive::Carry {
@@ -496,6 +517,14 @@ impl Sandbox {
                 };
             }
             s.integrity=(s.integrity-damage).max(0.0);
+        }
+        for f in &mut self.features {
+            if f.regeneration_per_day>0.0 {
+                let drought:f32=active_events.iter().filter(|e|e.kind==WorldEventKind::Drought).map(|e|e.influence_at(f.position)).sum();
+                let fire:f32=active_events.iter().filter(|e|e.kind==WorldEventKind::Fire).map(|e|e.influence_at(f.position)).sum();
+                let growth=f.regeneration_per_day*days*(1.0-drought.clamp(0.0,0.95));
+                f.quantity=(f.quantity+growth-fire*0.18*days).clamp(0.0,f.capacity);
+            }
         }
         self.events.retain(|e|e.active(self.year));
         for a in &mut self.animals {
