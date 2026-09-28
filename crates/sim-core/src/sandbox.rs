@@ -201,8 +201,12 @@ impl Sandbox {
             r.mind.needs.hunger=(r.mind.needs.hunger+days*0.006).clamp(0.0,1.0);
             r.mind.needs.rest=(r.mind.needs.rest+days*0.002).clamp(0.0,1.0);
             let mut perceived=Vec::new();
+            let shelter_protection=if r.current_action==ActionPrimitive::Hide {
+                snapshot_structures.iter().filter(|s|s.integrity>0.2&&dist(r.position,s.position)<10.0)
+                    .map(|s|s.integrity*0.65).fold(0.0_f32,f32::max)
+            } else {0.0};
             for e in &active_events {
-                let influence=e.influence_at(r.position);
+                let influence=e.influence_at(r.position)*(1.0-shelter_protection);
                 if influence>0.0 {
                     if let Some(kind)=e.situation() {
                         let confidence=(0.35+influence*0.5).clamp(0.1,1.0);
@@ -239,8 +243,9 @@ impl Sandbox {
             for s in &snapshot_structures {
                 let d=dist(r.position,s.position);
                 if d<=85.0 {
-                    perceived.push(PerceivedFeature{id:s.id,kind:FeatureKind::ConstructedObject,distance_m:d,danger:(1.0-s.integrity)*0.2,
-                        food_hint:0.0,material_hint:s.integrity,uncertainty:0.05});
+                    let kind=if s.integrity>0.2{FeatureKind::ConstructedObject}else{FeatureKind::LooseMaterial};
+                    perceived.push(PerceivedFeature{id:s.id,kind,distance_m:d,danger:(1.0-s.integrity)*0.25,
+                        food_hint:0.0,material_hint:(0.3+s.material_invested/60.0).clamp(0.0,1.0),uncertainty:0.05});
                 }
             }
             for m in &snapshot_monsters {
@@ -407,6 +412,21 @@ impl Sandbox {
                     self.causal_log.push(self.year,CausalNode::Transmission{from:*source,to:r.id,label:format!("{:?} rumor",report.kind)});
                 }
             }
+        }
+        for s in &mut self.structures {
+            let mut damage=days*0.0000025;
+            for e in &active_events {
+                let x=e.influence_at(s.position);
+                if x<=0.0{continue;}
+                damage+=match e.kind {
+                    WorldEventKind::Fire=>x*0.010*days,
+                    WorldEventKind::Flood=>x*0.004*days,
+                    WorldEventKind::Earthquake=>x*0.020*days,
+                    WorldEventKind::Storm=>x*0.006*days,
+                    _=>0.0,
+                };
+            }
+            s.integrity=(s.integrity-damage).max(0.0);
         }
         self.events.retain(|e|e.active(self.year));
         for a in &mut self.animals {
