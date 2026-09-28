@@ -14,6 +14,7 @@ struct EmergenceSummary {
     max_design_generation:u32,
     knowledge_items:usize,
     causal_records:usize,
+    causal_total:u64,
 }
 
 fn summarize(sim:&Sandbox)->EmergenceSummary {
@@ -30,6 +31,7 @@ fn summarize(sim:&Sandbox)->EmergenceSummary {
         max_design_generation:sim.structures.iter().map(|s|s.design.generation).max().unwrap_or(0),
         knowledge_items:sim.residents.iter().filter(|r|r.health>0.0).map(|r|r.knowledge.items.len()).sum(),
         causal_records:sim.causal_log.nodes.len(),
+        causal_total:sim.causal_log.total_written,
     }
 }
 
@@ -55,6 +57,6 @@ fn main() {
         let s=run_emergence(base_seed+i,years,step_days);
         println!("{}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             s.seed,s.year,s.alive,s.residents_total,s.households,s.active_settlements,s.settlement_lineages,
-            s.structures,s.projects,s.max_design_generation,s.knowledge_items,s.causal_records);
+            s.structures,s.projects,s.max_design_generation,s.knowledge_items,s.causal_records,s.causal_total);
     }
 }
