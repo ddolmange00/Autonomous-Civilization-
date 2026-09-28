@@ -45,6 +45,21 @@ pub fn seed_shelter_design(id:u64,parent:Option<u64>,generation:u32,skill:f32,ma
     }
 }
 
+pub fn evolve_shelter_design(parent:&DesignGenome,id:u64,skill:f32,material:f32,variation:f32)->DesignGenome {
+    let v=variation.clamp(-1.0,1.0);
+    let skill=skill.clamp(0.0,1.0);
+    DesignGenome{
+        id,parent:Some(parent.id),generation:parent.generation+1,function:Function::Shelter,
+        length_m:(parent.length_m*(1.0+v*0.08)).clamp(1.2,8.0),
+        width_m:(parent.width_m*(1.0-v*0.06)).clamp(1.2,7.0),
+        thickness_m:(parent.thickness_m*(1.0+0.10*(1.0-skill)-v*0.05)).clamp(0.05,0.60),
+        curvature:(parent.curvature+v*0.08).clamp(0.0,1.0),
+        edge_fraction:0.0,
+        binding_quality:(parent.binding_quality*0.72+(0.18+0.78*skill)*0.28+v*0.03).clamp(0.0,1.0),
+        material_fraction:vec![(1,material.max(0.1))],
+    }
+}
+
 pub fn work_value(action:ActionPrimitive,skill:f32,days:f32)->f32 {
     let base=match action {
         ActionPrimitive::Bind=>1.0,
@@ -67,6 +82,11 @@ mod tests {
     use super::*;
     #[test] fn skilled_supplied_household_is_more_likely_to_build() {
         assert!(proposal_strength(0.8,0.7,0.8,40.0)>proposal_strength(0.8,0.7,0.1,3.0));
+    }
+    #[test] fn descendants_keep_design_lineage() {
+        let p=seed_shelter_design(10,None,0,0.4,20.0);
+        let c=evolve_shelter_design(&p,11,0.7,25.0,0.2);
+        assert_eq!(c.parent,Some(10));assert_eq!(c.generation,1);
     }
     #[test] fn practiced_work_advances_faster() {
         assert!(work_value(ActionPrimitive::Raise,0.9,1.0)>work_value(ActionPrimitive::Raise,0.1,1.0));
