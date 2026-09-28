@@ -889,7 +889,7 @@ impl Sandbox {
                 let x=h.shared_material.min(required_material*0.25);h.shared_material-=x;x
             }else{0.0};
             self.projects.push(ConstructionProject{id,household_id:hid,position:pos,design,progress:0.0,required_work,
-                material_committed:initial,material_required:required_material});
+                material_committed:initial,material_required:required_material,started_year:self.year});
             self.causal_log.push(self.year,CausalNode::Outcome{resident_id:None,label:format!("construction {} proposed by household {}",id,hid),value:0.3});
         }
 
