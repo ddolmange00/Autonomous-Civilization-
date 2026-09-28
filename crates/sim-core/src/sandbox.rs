@@ -124,7 +124,7 @@ impl Sandbox {
             features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,
                 position:Position{x:0.0,y:y as f32*22.0},danger:0.65,food:0.0,material:0.0}); id+=1;
         }
-        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],projects:vec![],structures:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048},next_id:id}
+        Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],projects:vec![],structures:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048,total_written:0},next_id:id}
     }
 
     pub fn spawn_resident_at(&mut self, position:Position) {
