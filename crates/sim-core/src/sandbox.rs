@@ -272,6 +272,20 @@ impl Sandbox {
                 relation:r.life.social.relations.get(&o.id).copied().unwrap_or_default(),
             }).collect();
             affordances.extend(generate_social(&social_targets));
+            for a in &mut affordances {
+                if let Some(tid)=a.target {
+                    if let Some(s)=snapshot_structures.iter().find(|s|s.id==tid&&s.integrity>0.2) {
+                        let cap=s.capabilities();
+                        match a.action {
+                            ActionPrimitive::Hide=>{a.expected.safety+=cap.shelter*0.45+cap.defense*0.20;a.expected.rest+=cap.shelter*0.15;}
+                            ActionPrimitive::Observe=>{a.expected.knowledge+=cap.observation*0.16+cap.workspace*0.05;}
+                            ActionPrimitive::Experiment=>{a.expected.knowledge+=cap.workspace*0.18+cap.observation*0.08;}
+                            ActionPrimitive::Bind|ActionPrimitive::Raise=>{a.expected.safety+=cap.defense*0.10;}
+                            _=>{}
+                        }
+                    }
+                }
+            }
             if let Some(village)=self.settlements.iter().filter(|s|!s.members.is_empty()).find(|s|s.members.contains(&r.id)) {
                 for a in &mut affordances { a.local_norm=village.culture.norm(a.action)*0.35; }
             }
