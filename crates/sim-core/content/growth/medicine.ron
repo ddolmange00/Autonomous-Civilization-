@@ -1,0 +1,45 @@
+// Medicine: herb lore to germ theory. Plague and war push it forward.
+(domain: Medicine, nodes: [
+    (id: "herbalism", name: "Herbalism", tier: 0, spurs: [Plague], unlocks: [
+        (id: "herbalist", name: "Herbalist", kind: Job, conditions: [Resource("herbs")], effects: [Healing(0.1)], look: "herbalist"),
+        (id: "poultice", name: "Herbal poultice", kind: Tool, cost: [("herbs", 1)], work: 1, effects: [Healing(0.05)], look: "poultice"),
+    ]),
+    (id: "bonesetting", name: "Bonesetting", tier: 1, requires: ["herbalism"], spurs: [War, Raided], unlocks: [
+        (id: "bonesetter", name: "Bonesetter", kind: Job, effects: [Healing(0.15)], look: "bonesetter"),
+        (id: "splint", name: "Splint", kind: Tool, cost: [("wood", 1), ("rope", 1)], work: 1, effects: [Healing(0.05)], look: "splint"),
+    ]),
+    (id: "hygiene", name: "Hygiene", tier: 2, requires: ["pottery"], spurs: [Plague, Crowding], unlocks: [
+        (id: "latrine", name: "Latrine", kind: Building, work: 4, footprint: (1, 1), effects: [Healing(0.1)], look: "latrine"),
+        (id: "well", name: "Well", kind: Building, cost: [("stone", 10)], work: 10, footprint: (1, 1), effects: [Healing(0.1), FoodYield(0.05)], look: "well",
+         variants: [(when: [Biome(Desert)], name: "Deep well", look: "deep_well", cost: [("stone", 16), ("rope", 4)])]),
+        (id: "waste_burial", name: "Waste burial", kind: Law, effects: [Healing(0.05)], look: "waste_law"),
+    ]),
+    (id: "quarantine", name: "Quarantine", tier: 3, requires: ["hygiene"], spurs: [Plague], unlocks: [
+        (id: "quarantine_law", name: "Quarantine", kind: Law, effects: [Healing(0.2), Loyalty(-0.05), Trade(-0.1)], look: "quarantine"),
+        (id: "sick_house", name: "Sick house", kind: Building, cost: [("wood", 16)], work: 10, footprint: (2, 2), effects: [Healing(0.2)], look: "sick_house"),
+    ]),
+    (id: "surgery", name: "Surgery", tier: 5, requires: ["bonesetting", "copper_tools"], spurs: [War], unlocks: [
+        (id: "surgeon", name: "Surgeon", kind: Job, effects: [Healing(0.3)], look: "surgeon"),
+        (id: "field_hospital", name: "Field hospital", kind: Building, cost: [("cloth", 10), ("wood", 10)], work: 10, footprint: (2, 2),
+         effects: [Healing(0.3)], look: "field_hospital"),
+    ]),
+    (id: "alchemy", name: "Alchemy", tier: 5, requires: ["glassmaking", "herbalism"], effort: 1.5, unlocks: [
+        (id: "alchemist_lab", name: "Alchemist's workshop", kind: Building, cost: [("glass", 10), ("stone", 20)], work: 20, footprint: (2, 2),
+         effects: [Research(0.2)], look: "alchemy_lab"),
+        (id: "tinctures", name: "Tinctures", kind: Process, consumes: [("herbs", 2), ("glass", 1)], produces: [("medicine", 2)], work: 2),
+        (id: "alchemist", name: "Alchemist", kind: Job, effects: [Research(0.15), Healing(0.05)], look: "alchemist"),
+    ]),
+    (id: "hospitals", name: "Hospitals", tier: 7, requires: ["surgery"], any_of: ["monasticism", "bureaucracy"], spurs: [Plague, War], unlocks: [
+        (id: "hospital", name: "Hospital", kind: Building, cost: [("stone", 60), ("wood", 20), ("cloth", 10)], work: 50, footprint: (3, 3),
+         conditions: [Population(150)], effects: [Healing(0.6)], look: "hospital"),
+        (id: "physician", name: "Physician", kind: Job, effects: [Healing(0.3)], look: "physician"),
+    ]),
+    (id: "inoculation", name: "Inoculation", tier: 8, requires: ["alchemy", "hospitals"], spurs: [Plague], effort: 2.0, unlocks: [
+        (id: "variolation", name: "Variolation", kind: Law, effects: [Healing(0.3), Fertility(0.1)], look: "inoculation"),
+    ]),
+    (id: "germ_theory", name: "Germ theory", tier: 9, requires: ["inoculation", "glassmaking"], spurs: [Plague], effort: 2.5, unlocks: [
+        (id: "microscope", name: "Microscope", kind: Tool, cost: [("glass", 2), ("bronze", 1)], work: 6, effects: [Research(0.2)], look: "microscope"),
+        (id: "antiseptic_surgery", name: "Antiseptic surgery", kind: Law, effects: [Healing(0.5)], look: "antiseptic"),
+        (id: "clinic", name: "Clinic", kind: Building, cost: [("brick", 30), ("glass", 10)], work: 30, footprint: (2, 2), effects: [Healing(0.5)], look: "clinic"),
+    ]),
+])

@@ -1,0 +1,115 @@
+// Architecture and defense: shelters, walls, gates, towers, cities.
+// Every land builds the same functions in its own way.
+(domain: Architecture, nodes: [
+    (id: "shelters", name: "Shelters", tier: 0, starting: true, era: "stone-using", unlocks: [
+        (id: "lean_to", name: "Lean-to", kind: Building, cost: [("wood", 4)], work: 2, footprint: (1, 1), effects: [Shelter(3)], look: "lean_to",
+         variants: [
+            (when: [Biome(Ice), Biome(Snowcap), Biome(Tundra)], name: "Snow house", look: "snow_house", cost: []),
+            (when: [Biome(ColdSteppe)], name: "Hide tent", look: "hide_tent", cost: [("hide", 3), ("bone", 2)]),
+            (when: [Biome(Swamp), Biome(Rainforest)], name: "Stilt hut", look: "stilt_hut", cost: [("wood", 6)]),
+            (when: [Biome(Desert)], name: "Rock shelter", look: "rock_shelter", cost: [("stone", 4)]),
+            (when: [Biome(Beach)], name: "Palm hut", look: "palm_hut", cost: [("palm", 4)]),
+         ]),
+    ]),
+    (id: "storage_pits", name: "Storage pits", tier: 1, requires: ["shelters"], spurs: [Famine], unlocks: [
+        (id: "storage_pit", name: "Storage pit", kind: Building, work: 3, footprint: (1, 1), effects: [Storage(40)], look: "storage_pit",
+         variants: [(when: [Biome(Tundra), Biome(Ice)], name: "Ice cellar", look: "ice_cellar")]),
+        (id: "stockpile", name: "Stockpile", kind: Building, work: 1, footprint: (2, 2), effects: [Storage(60)], look: "stockpile"),
+    ]),
+    (id: "palisades", name: "Palisades and watchtowers", tier: 2, requires: ["shelters", "cordage"], spurs: [Raided, Monsters, War], unlocks: [
+        (id: "palisade", name: "Palisade", kind: Building, cost: [("wood", 6)], work: 3, footprint: (1, 1), effects: [Defense(0.3)], look: "palisade",
+         variants: [
+            (when: [Biome(Savanna), Biome(Desert)], name: "Thorn hedge", look: "thorn_hedge", cost: [("wood", 2)]),
+            (when: [Biome(Ice), Biome(Snowcap), Biome(Tundra)], name: "Ice wall", look: "ice_wall", cost: []),
+            (when: [Biome(Swamp)], name: "Stake fence", look: "stake_fence", cost: [("wood", 4), ("reed", 2)]),
+         ]),
+        (id: "wooden_gate", name: "Wooden gate", kind: Building, cost: [("wood", 10), ("rope", 2)], work: 5, footprint: (1, 1), effects: [Defense(0.3)], look: "wood_gate"),
+        (id: "watchtower", name: "Watchtower", kind: Building, cost: [("wood", 10), ("rope", 2)], work: 6, footprint: (1, 1),
+         effects: [Vision(12), Defense(0.1)], look: "watchtower",
+         variants: [
+            (when: [Biome(Desert), Biome(Savanna)], name: "Mud watchtower", look: "mud_watchtower", cost: [("clay", 12)]),
+            (when: [Biome(Rainforest), Biome(Swamp)], name: "Canopy lookout", look: "canopy_lookout", cost: [("wood", 6), ("rope", 3)]),
+            (when: [Mountain, Biome(Alpine)], name: "Rock lookout", look: "rock_lookout", cost: [("stone", 10)]),
+         ]),
+        (id: "ditch", name: "Ditch", kind: Building, work: 8, footprint: (1, 1), effects: [Defense(0.2)], look: "ditch"),
+    ]),
+    (id: "houses", name: "Houses", tier: 2, requires: ["shelters"], spurs: [Crowding, Cold], unlocks: [
+        (id: "house", name: "House", kind: Building, cost: [("wood", 12), ("stone", 4)], work: 8, footprint: (2, 2), effects: [Shelter(6)], look: "house",
+         variants: [
+            (when: [Biome(Desert)], name: "Adobe house", look: "adobe", cost: [("clay", 14)]),
+            (when: [Biome(ColdSteppe)], name: "Yurt", look: "yurt", cost: [("hide", 6), ("wood", 4)]),
+            (when: [Biome(Tundra), Biome(Taiga)], name: "Pit house", look: "pit_house", cost: [("wood", 8), ("stone", 2)]),
+            (when: [Biome(Swamp), Biome(Rainforest), Coast], name: "Stilt house", look: "stilt_house", cost: [("wood", 16)]),
+            (when: [Mountain, Biome(Alpine)], name: "Stone hut", look: "stone_hut", cost: [("stone", 14)]),
+            (lean: Cooperation, name: "Longhouse", look: "longhouse", cost: [("wood", 24), ("stone", 4)]),
+         ]),
+    ]),
+    (id: "carpentry", name: "Carpentry", tier: 2, requires: ["knapping", "cordage"], unlocks: [
+        (id: "workshop", name: "Workshop", kind: Building, cost: [("wood", 16)], work: 8, footprint: (2, 2), effects: [Speed(0.2)], look: "workshop"),
+        (id: "carpenter", name: "Carpenter", kind: Job, effects: [Speed(0.15)], look: "carpenter"),
+        (id: "log_bridge", name: "Log bridge", kind: Building, cost: [("wood", 20), ("rope", 4)], work: 12, footprint: (1, 3),
+         conditions: [Place([River])], effects: [Speed(0.3)], look: "log_bridge",
+         variants: [(when: [Biome(Rainforest), Mountain], name: "Rope bridge", look: "rope_bridge", cost: [("rope", 12), ("wood", 6)])]),
+    ]),
+    (id: "masonry", name: "Masonry", tier: 3, requires: ["carpentry"], needs: ["stone"], effort: 1.5, unlocks: [
+        (id: "stone_house", name: "Stone house", kind: Building, cost: [("stone", 20), ("wood", 4)], work: 14, footprint: (2, 2),
+         effects: [Shelter(8), Defense(0.1)], look: "stone_house"),
+        (id: "stone_wall", name: "Stone wall", kind: Building, cost: [("stone", 8)], work: 5, footprint: (1, 1), effects: [Defense(0.8)], look: "stone_wall",
+         variants: [
+            (when: [Biome(Desert), Biome(Savanna)], name: "Mud-brick wall", look: "mudbrick_wall", cost: [("brick", 8)]),
+            (when: [Biome(Tundra), Biome(Taiga)], name: "Turf-and-stone wall", look: "turf_wall", cost: [("stone", 5)]),
+         ]),
+        (id: "stone_gate", name: "Stone gate", kind: Building, cost: [("stone", 16), ("wood", 8)], work: 10, footprint: (1, 1), effects: [Defense(0.8)], look: "stone_gate"),
+        (id: "stone_tower", name: "Stone watchtower", kind: Building, cost: [("stone", 24), ("wood", 4)], work: 16, footprint: (1, 1),
+         effects: [Vision(16), Defense(0.4), Range(9)], look: "stone_tower"),
+        (id: "mason", name: "Mason", kind: Job, effects: [Speed(0.2)], look: "mason"),
+    ]),
+    (id: "granaries", name: "Granaries", tier: 3, requires: ["storage_pits"], any_of: ["agriculture", "rice_farming", "tuber_gardens"], spurs: [Famine], unlocks: [
+        (id: "granary", name: "Granary", kind: Building, cost: [("wood", 20), ("stone", 10)], work: 12, footprint: (2, 2), effects: [Storage(200)], look: "granary",
+         variants: [
+            (when: [Biome(Desert), Biome(Savanna)], name: "Clay granary", look: "clay_granary", cost: [("clay", 24)]),
+            (when: [Biome(Swamp), Biome(Rainforest)], name: "Raised rice barn", look: "rice_barn", cost: [("wood", 24)]),
+         ]),
+    ]),
+    (id: "fortification", name: "Fortification", tier: 5, requires: ["masonry", "palisades"], effort: 1.5, spurs: [Siege, Raided, War], unlocks: [
+        (id: "bastion_tower", name: "Bastion tower", kind: Building, cost: [("stone", 40), ("wood", 10)], work: 30, footprint: (2, 2),
+         effects: [Defense(1.0), Range(10), Vision(14)], look: "bastion"),
+        (id: "moat", name: "Moat", kind: Building, work: 30, footprint: (1, 1), effects: [Defense(0.5)], look: "moat"),
+        (id: "gatehouse", name: "Gatehouse", kind: Building, cost: [("stone", 40), ("wood", 16)], work: 30, footprint: (2, 2), effects: [Defense(1.2)], look: "gatehouse"),
+        (id: "hillfort", name: "Hill fort", kind: Building, cost: [("stone", 80), ("wood", 20)], work: 60, footprint: (4, 4),
+         conditions: [Place([Hills, Mountain])], effects: [Defense(1.5), Shelter(20)], look: "hillfort"),
+    ]),
+    (id: "arches", name: "Arches and domes", tier: 6, requires: ["masonry", "lime_burning", "mathematics"], effort: 1.5, unlocks: [
+        (id: "aqueduct", name: "Aqueduct", kind: Building, cost: [("stone", 60), ("lime", 20)], work: 60, footprint: (1, 6),
+         conditions: [Population(200)], effects: [FoodYield(0.2), Healing(0.1)], look: "aqueduct",
+         variants: [(when: [Biome(Desert)], name: "Stepwell", look: "stepwell", cost: [("stone", 40), ("lime", 10)])]),
+        (id: "bathhouse", name: "Bathhouse", kind: Building, cost: [("stone", 30), ("lime", 10)], work: 30, footprint: (2, 2),
+         effects: [Healing(0.2), Morale(0.1)], look: "bathhouse"),
+        (id: "stone_bridge", name: "Stone bridge", kind: Building, cost: [("stone", 50), ("lime", 10)], work: 40, footprint: (1, 4),
+         conditions: [Place([River])], effects: [Speed(0.4)], look: "stone_bridge"),
+    ]),
+    (id: "concrete_construction", name: "Concrete construction", tier: 7, requires: ["concrete", "arches"], unlocks: [
+        (id: "fortress_wall", name: "Fortress wall", kind: Building, cost: [("concrete", 12), ("stone", 4)], work: 8, footprint: (1, 1), effects: [Defense(1.5)], look: "fortress_wall"),
+        (id: "harbour", name: "Harbour", kind: Building, cost: [("concrete", 60), ("stone", 40)], work: 60, footprint: (3, 3),
+         conditions: [Place([Coast])], effects: [Trade(0.6), Capacity(40)], look: "harbour"),
+        (id: "domed_hall", name: "Domed hall", kind: Building, cost: [("concrete", 60), ("marble", 10)], work: 70, footprint: (3, 3),
+         effects: [Morale(0.2), Loyalty(0.1)], look: "domed_hall"),
+    ]),
+    (id: "star_forts", name: "Star forts", tier: 9, requires: ["firearms", "fortification"], spurs: [Siege], unlocks: [
+        (id: "star_bastion", name: "Star-fort bastion", kind: Building, cost: [("stone", 60), ("brick", 60)], work: 60, footprint: (3, 3),
+         effects: [Defense(2.0)], look: "star_bastion"),
+        (id: "earthwork", name: "Earthwork rampart", kind: Building, work: 20, footprint: (1, 1), effects: [Defense(1.0)], look: "earthwork"),
+    ]),
+    (id: "industrial_building", name: "Industrial building", tier: 9, requires: ["steam_power"], spurs: [Crowding], unlocks: [
+        (id: "factory", name: "Factory", kind: Building, cost: [("brick", 80), ("steel", 30), ("glass", 10)], work: 80, footprint: (3, 3),
+         conditions: [Building("steam_engine")], effects: [Speed(0.6)], look: "factory"),
+        (id: "tenement", name: "Tenement", kind: Building, cost: [("brick", 40), ("wood", 10)], work: 30, footprint: (2, 2), effects: [Shelter(24), Healing(-0.05)], look: "tenement"),
+        (id: "warehouse", name: "Warehouse", kind: Building, cost: [("brick", 40), ("steel", 10)], work: 30, footprint: (3, 2), effects: [Storage(1000)], look: "warehouse"),
+    ]),
+    (id: "electric_grid", name: "Electric grid", tier: 10, requires: ["electricity"], unlocks: [
+        (id: "street_lights", name: "Street lights", kind: Building, cost: [("steel", 2), ("wire", 2), ("glass", 1)], work: 2, footprint: (1, 1),
+         consumes: [("electricity", 1)], effects: [Morale(0.05), Vision(6)], look: "street_light"),
+        (id: "apartment_block", name: "Apartment block", kind: Building, cost: [("concrete", 60), ("steel", 20), ("glass", 10), ("wire", 6)], work: 60, footprint: (2, 2),
+         consumes: [("electricity", 1)], effects: [Shelter(60)], look: "apartments"),
+    ]),
+])

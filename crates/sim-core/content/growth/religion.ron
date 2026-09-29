@@ -1,0 +1,83 @@
+// Religion and rites: from grave goods to holy law. Sacred places take the
+// shape of the land they stand on.
+(domain: Religion, nodes: [
+    (id: "ancestor_veneration", name: "Ancestor veneration", tier: 0, spurs: [Death], unlocks: [
+        (id: "burial_rite", name: "Burial rite", kind: Rite, effects: [Morale(0.05), Loyalty(0.05)], look: "burial"),
+        (id: "burial_mound", name: "Burial mound", kind: Building, work: 10, footprint: (2, 2), effects: [Faith(0.1), Loyalty(0.05)], look: "mound",
+         variants: [
+            (when: [Biome(Tundra), Biome(Alpine), Mountain], name: "Stone cairn", look: "cairn", cost: [("stone", 10)]),
+            (when: [Biome(Desert)], name: "Rock tomb", look: "rock_tomb", cost: [("stone", 12)]),
+            (when: [Coast], name: "Ship burial", look: "ship_burial", cost: [("wood", 12)]),
+         ]),
+    ]),
+    (id: "animism", name: "Animism", tier: 0, spurs: [Monsters, Flood, Drought], unlocks: [
+        (id: "spirit_offering", name: "Spirit offering", kind: Rite, cost: [("meat", 1)], effects: [Faith(0.1), Morale(0.05)], look: "offering"),
+        (id: "spirit_pole", name: "Spirit pole", kind: Building, cost: [("wood", 4)], work: 3, footprint: (1, 1), effects: [Faith(0.1)], look: "spirit_pole",
+         variants: [
+            (when: [Coast, Biome(TemperateForest)], name: "Totem pole", look: "totem_pole", cost: [("wood", 8)]),
+            (when: [Biome(Tundra), Biome(Ice), Biome(Snowcap)], name: "Inuksuk", look: "inuksuk", cost: [("stone", 6)]),
+            (when: [Biome(Desert), Biome(Savanna)], name: "Painted rock", look: "painted_rock", cost: [("ochre", 2)]),
+         ]),
+        (id: "cave_painting", name: "Cave painting", kind: Rite, cost: [("ochre", 1)], effects: [Morale(0.05), Research(0.02)], look: "cave_art"),
+    ]),
+    (id: "shamanism", name: "Shamanism", tier: 1, any_of: ["animism", "ancestor_veneration"], spurs: [Plague, Famine, Monsters], unlocks: [
+        (id: "shaman", name: "Shaman", kind: Job, effects: [Faith(0.2), Healing(0.05)], look: "shaman"),
+        (id: "trance_dance", name: "Trance dance", kind: Rite, effects: [Morale(0.15), Faith(0.1)], look: "trance_dance"),
+        (id: "war_paint", name: "War paint", kind: Rite, cost: [("ochre", 1)], effects: [Morale(0.2), Attack(0.5)], look: "war_paint"),
+    ]),
+    (id: "sacrifice", name: "Sacrifice", tier: 2, requires: ["shamanism"], spurs: [Famine, Drought, Plague, War], unlocks: [
+        (id: "harvest_offering", name: "Harvest offering", kind: Rite, cost: [("grain", 4)], effects: [Faith(0.3), Morale(0.1)], look: "harvest_offering"),
+        (id: "blood_offering", name: "Blood offering", kind: Rite, cost: [("meat", 4)], effects: [Faith(0.5), Loyalty(-0.05), Morale(0.05)], look: "altar"),
+        (id: "altar", name: "Altar", kind: Building, cost: [("stone", 8)], work: 5, footprint: (1, 1), effects: [Faith(0.3)], look: "altar",
+         variants: [(when: [Biome(Rainforest)], name: "Jungle altar", look: "jungle_altar", cost: [("stone", 6), ("wood", 4)])]),
+    ]),
+    (id: "sacred_sites", name: "Sacred sites", tier: 2, requires: ["shamanism"], unlocks: [
+        (id: "stone_circle", name: "Stone circle", kind: Building, cost: [("stone", 40)], work: 40, footprint: (3, 3),
+         effects: [Faith(0.4), Morale(0.1)], look: "stone_circle",
+         variants: [
+            (when: [Biome(TemperateForest), Biome(Taiga), Biome(Rainforest)], name: "Sacred grove", look: "sacred_grove", cost: []),
+            (when: [Biome(Desert)], name: "Oasis shrine", look: "oasis_shrine", cost: [("stone", 16)]),
+            (when: [Lake, River], name: "Holy spring", look: "holy_spring", cost: [("stone", 10)]),
+            (when: [Mountain, Biome(Alpine)], name: "Mountain sanctuary", look: "mountain_shrine", cost: [("stone", 20)]),
+         ]),
+        (id: "pilgrimage", name: "Pilgrimage", kind: Rite, effects: [Faith(0.2), Trade(0.1)], look: "pilgrims"),
+    ]),
+    (id: "sky_calendar", name: "Sky calendar", tier: 3, requires: ["sacred_sites"], unlocks: [
+        (id: "observatory_mound", name: "Observatory mound", kind: Building, cost: [("stone", 30)], work: 30, footprint: (2, 2),
+         effects: [Research(0.2), Faith(0.1)], look: "observatory_mound"),
+        (id: "solstice_festival", name: "Solstice festival", kind: Rite, effects: [Morale(0.2), Loyalty(0.05)], look: "festival",
+         variants: [(when: [Biome(Tundra), Biome(Ice), Biome(Taiga)], name: "Return-of-the-sun feast", look: "sun_feast")]),
+    ]),
+    (id: "priesthood", name: "Priesthood", tier: 3, requires: ["shamanism"], any_of: ["sacred_sites", "sacrifice"], spurs: [Unrest, Plague], unlocks: [
+        (id: "priest", name: "Priest", kind: Job, effects: [Faith(0.4), Loyalty(0.1)], look: "priest"),
+        (id: "temple", name: "Temple", kind: Building, cost: [("stone", 60), ("wood", 20)], work: 60, footprint: (3, 3),
+         conditions: [Population(80)], effects: [Faith(1.0), Loyalty(0.1)], look: "temple",
+         variants: [
+            (when: [Biome(Desert), Biome(Savanna)], name: "Ziggurat", look: "ziggurat", cost: [("brick", 120)]),
+            (when: [Biome(Rainforest)], name: "Step pyramid", look: "step_pyramid", cost: [("stone", 90)]),
+            (when: [Biome(Swamp), Coast], name: "Stilt temple", look: "stilt_temple", cost: [("wood", 60), ("stone", 10)]),
+            (when: [Mountain, Biome(Alpine)], name: "Cliff temple", look: "cliff_temple", cost: [("stone", 50)]),
+         ]),
+    ]),
+    (id: "holy_war", name: "Holy war", tier: 4, requires: ["priesthood"], spurs: [War, Siege, Unrest], unlocks: [
+        (id: "war_blessing", name: "War blessing", kind: Rite, effects: [Morale(0.4), Attack(1)], look: "war_blessing"),
+        (id: "temple_guard", name: "Temple guard", kind: Job, conditions: [Building("temple")], effects: [Attack(3), Defense(0.2), Faith(0.1)], look: "temple_guard"),
+    ]),
+    (id: "scripture", name: "Scripture", tier: 5, requires: ["priesthood", "writing"], unlocks: [
+        (id: "scriptorium", name: "Scriptorium", kind: Building, cost: [("stone", 30), ("wood", 10)], work: 30, footprint: (2, 2),
+         effects: [Research(0.2), Faith(0.2)], look: "scriptorium"),
+        (id: "holy_law", name: "Holy law", kind: Law, effects: [Loyalty(0.2), Faith(0.2)], look: "holy_law"),
+    ]),
+    (id: "monasticism", name: "Monasticism", tier: 6, requires: ["scripture"], spurs: [Unrest, Plague], unlocks: [
+        (id: "monastery", name: "Monastery", kind: Building, cost: [("stone", 60), ("wood", 20)], work: 60, footprint: (3, 3),
+         effects: [Research(0.3), Healing(0.1), Faith(0.3)], look: "monastery",
+         variants: [(when: [Mountain, Biome(Alpine)], name: "Mountain monastery", look: "mountain_monastery")]),
+        (id: "monk", name: "Monk", kind: Job, effects: [Research(0.1), Faith(0.2)], look: "monk"),
+    ]),
+    (id: "missionaries", name: "Missionaries", tier: 6, requires: ["scripture"], spurs: [Trade], unlocks: [
+        (id: "missionary", name: "Missionary", kind: Job, effects: [Faith(0.2), Trade(0.1), Loyalty(0.05)], look: "missionary"),
+    ]),
+    (id: "religious_tolerance", name: "Religious tolerance", tier: 8, requires: ["printing"], spurs: [Unrest], unlocks: [
+        (id: "freedom_of_worship", name: "Freedom of worship", kind: Law, effects: [Loyalty(0.15), Research(0.1), Faith(-0.1)], look: "tolerance"),
+    ]),
+])

@@ -8,3 +8,4 @@ license.workspace = true
 serde.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+ron.workspace = true

@@ -1,0 +1,85 @@
+// Governance: band councils to nation states, including bondage and its
+// undoing. Laws trade loyalty against output; unrest pushes reform.
+(domain: Governance, nodes: [
+    (id: "band_council", name: "Band council", tier: 0, starting: true, unlocks: [
+        (id: "elders_council", name: "Elders' council", kind: Law, effects: [Loyalty(0.05)], look: "council_fire"),
+    ]),
+    (id: "counting", name: "Counting", tier: 1, requires: ["band_council"], unlocks: [
+        (id: "tally_sticks", name: "Tally sticks", kind: Tool, cost: [("wood", 1)], work: 1, effects: [Research(0.05)], look: "tally",
+         variants: [(when: [Mountain, Biome(Alpine)], name: "Knotted cords", look: "quipu", cost: [("rope", 1)])]),
+    ]),
+    (id: "bartering", name: "Bartering", tier: 1, requires: ["band_council"], spurs: [Trade, Famine], unlocks: [
+        (id: "trade_post", name: "Trade post", kind: Building, cost: [("wood", 8)], work: 4, footprint: (1, 1), effects: [Trade(0.3)], look: "trade_post"),
+        (id: "gift_exchange", name: "Gift exchange", kind: Rite, effects: [Trade(0.1), Loyalty(0.05)], look: "gifts"),
+    ]),
+    (id: "chieftainship", name: "Chieftainship", tier: 1, requires: ["band_council"], spurs: [War, Raided, Unrest], unlocks: [
+        (id: "chiefs_rule", name: "Chief's rule", kind: Law, effects: [Loyalty(0.1)], look: "chief"),
+        (id: "chiefs_hall", name: "Chief's hall", kind: Building, cost: [("wood", 24)], work: 12, footprint: (3, 2), effects: [Loyalty(0.1), Shelter(4)], look: "chiefs_hall",
+         variants: [
+            (when: [Biome(ColdSteppe)], name: "Great yurt", look: "great_yurt", cost: [("hide", 12), ("wood", 8)]),
+            (when: [Biome(Desert)], name: "Mud-brick hall", look: "mud_hall", cost: [("clay", 30)]),
+         ]),
+    ]),
+    (id: "tribute", name: "Tribute", tier: 2, requires: ["chieftainship"], spurs: [War], unlocks: [
+        (id: "tribute_law", name: "Tribute", kind: Law, effects: [Trade(0.2), Loyalty(-0.05)], look: "tribute"),
+    ]),
+    (id: "bondage", name: "Bondage", tier: 2, requires: ["chieftainship"], spurs: [War, Crowding], unlocks: [
+        (id: "bondage_law", name: "Bondage", kind: Law, effects: [Speed(0.3), Loyalty(-0.3), Morale(-0.1)], look: "chains"),
+        (id: "bond_quarters", name: "Bond quarters", kind: Building, cost: [("wood", 12)], work: 6, footprint: (2, 2), effects: [Shelter(10), Loyalty(-0.1)], look: "bond_quarters"),
+        (id: "overseer", name: "Overseer", kind: Job, effects: [Speed(0.1), Loyalty(-0.05), Defense(0.1)], look: "overseer"),
+    ]),
+    (id: "writing", name: "Writing", tier: 4, requires: ["counting"], any_of: ["priesthood", "chieftainship"], effort: 2.0, spurs: [Trade], unlocks: [
+        (id: "clay_tablets", name: "Clay tablets", kind: Tool, cost: [("clay", 1)], work: 1, effects: [Research(0.1)], look: "tablets",
+         variants: [
+            (when: [River, Biome(Swamp)], name: "Reed scrolls", look: "reed_scroll", cost: [("reed", 2)]),
+            (when: [Biome(Taiga), Biome(TemperateForest)], name: "Bark tablets", look: "bark_tablets", cost: [("wood", 1)]),
+         ]),
+    ]),
+    (id: "kingship", name: "Kingship", tier: 4, requires: ["chieftainship", "masonry"], spurs: [War, Unrest], unlocks: [
+        (id: "palace", name: "Palace", kind: Building, cost: [("stone", 80), ("wood", 30)], work: 80, footprint: (4, 3),
+         conditions: [Population(150)], effects: [Loyalty(0.3), Morale(0.1)], look: "palace",
+         variants: [
+            (when: [Biome(Desert), Biome(Savanna)], name: "Mud-brick palace", look: "mud_palace", cost: [("brick", 140)]),
+            (when: [Biome(ColdSteppe)], name: "Golden horde tent", look: "horde_tent", cost: [("cloth", 30), ("gold", 4), ("wood", 20)]),
+         ]),
+        (id: "hereditary_rule", name: "Hereditary rule", kind: Law, effects: [Loyalty(0.15), Research(-0.05)], look: "crown"),
+        (id: "royal_guard", name: "Royal guard", kind: Job, conditions: [Building("palace")], effects: [Attack(4), Defense(0.4), Loyalty(0.05)], look: "royal_guard"),
+    ]),
+    (id: "law_codes", name: "Law codes", tier: 5, requires: ["writing", "chieftainship"], spurs: [Unrest], unlocks: [
+        (id: "written_code", name: "Written law code", kind: Law, effects: [Loyalty(0.2)], look: "law_stele"),
+        (id: "courthouse", name: "Courthouse", kind: Building, cost: [("stone", 40)], work: 30, footprint: (2, 2), effects: [Loyalty(0.15)], look: "courthouse"),
+    ]),
+    (id: "mathematics", name: "Mathematics", tier: 5, requires: ["writing", "counting"], effort: 1.5, unlocks: [
+        (id: "school", name: "School", kind: Building, cost: [("stone", 30), ("wood", 10)], work: 24, footprint: (2, 2), effects: [Research(0.3)], look: "school"),
+        (id: "surveying", name: "Surveying", kind: Tool, cost: [("rope", 2), ("wood", 2)], work: 2, effects: [Speed(0.1), FoodYield(0.05)], look: "surveying"),
+    ]),
+    (id: "coinage", name: "Coinage", tier: 5, requires: ["precious_metals", "bartering"], spurs: [Trade], unlocks: [
+        (id: "coin", name: "Coin currency", kind: Law, effects: [Trade(0.4)], look: "coins"),
+        (id: "mint", name: "Mint", kind: Building, cost: [("stone", 30), ("silver", 4)], work: 24, footprint: (2, 2), effects: [Trade(0.3)], look: "mint"),
+    ]),
+    (id: "bureaucracy", name: "Bureaucracy", tier: 6, requires: ["law_codes", "mathematics"], spurs: [Crowding, Unrest], unlocks: [
+        (id: "census", name: "Census", kind: Law, effects: [Loyalty(0.05), Research(0.05), FoodYield(0.05)], look: "census"),
+        (id: "administrative_hall", name: "Administrative hall", kind: Building, cost: [("stone", 60), ("wood", 20)], work: 50, footprint: (3, 2),
+         effects: [Loyalty(0.2), Speed(0.1)], look: "admin_hall"),
+    ]),
+    (id: "assembly", name: "Assembly", tier: 6, requires: ["law_codes"], spurs: [Unrest], unlocks: [
+        (id: "assembly_law", name: "Citizens' assembly", kind: Law, effects: [Loyalty(0.3), Speed(-0.05)], look: "assembly"),
+        (id: "forum", name: "Forum", kind: Building, cost: [("stone", 50), ("marble", 6)], work: 40, footprint: (3, 3), effects: [Loyalty(0.2), Trade(0.1)], look: "forum"),
+    ]),
+    (id: "printing", name: "Printing", tier: 7, requires: ["papermaking", "iron_smelting", "mathematics"], effort: 2.0, unlocks: [
+        (id: "printing_press", name: "Printing press", kind: Building, cost: [("wood", 20), ("iron", 10)], work: 30, footprint: (2, 2),
+         consumes: [("paper", 1)], effects: [Research(0.5), Loyalty(0.05)], look: "press"),
+        (id: "pamphlets", name: "Pamphlets", kind: Tool, cost: [("paper", 2)], work: 1, effects: [Research(0.05), Loyalty(-0.05)], look: "pamphlets"),
+    ]),
+    (id: "banking", name: "Banking", tier: 7, requires: ["coinage", "bureaucracy"], spurs: [Trade], unlocks: [
+        (id: "bank", name: "Bank", kind: Building, cost: [("stone", 50), ("gold", 6)], work: 40, footprint: (2, 2), effects: [Trade(0.6)], look: "bank"),
+    ]),
+    (id: "abolition", name: "Abolition", tier: 8, requires: ["printing", "bondage"], spurs: [Unrest], unlocks: [
+        (id: "abolition_law", name: "Abolition", kind: Law, effects: [Loyalty(0.4), Morale(0.2), Speed(-0.2)], look: "broken_chains"),
+    ]),
+    (id: "nation_state", name: "Nation state", tier: 9, requires: ["printing", "bureaucracy"], spurs: [War, Unrest], unlocks: [
+        (id: "conscription", name: "Conscription", kind: Law, effects: [Attack(1), Capacity(40), Loyalty(-0.1)], look: "conscription"),
+        (id: "national_anthem", name: "National anthem", kind: Rite, effects: [Loyalty(0.2), Morale(0.1)], look: "anthem"),
+        (id: "parliament", name: "Parliament", kind: Building, cost: [("stone", 80), ("glass", 10)], work: 80, footprint: (4, 3), effects: [Loyalty(0.3)], look: "parliament"),
+    ]),
+])

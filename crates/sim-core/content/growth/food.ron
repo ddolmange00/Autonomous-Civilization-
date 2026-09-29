@@ -1,0 +1,149 @@
+// Food: foraging to refrigeration. Several independent domestications
+// (grain, rice, tubers, herds) so each region reaches farming its own way.
+(domain: Food, nodes: [
+    (id: "foraging", name: "Foraging", tier: 0, starting: true, era: "stone-using", unlocks: [
+        (id: "forager", name: "Forager", kind: Job, effects: [FoodYield(0.1)], look: "forager"),
+        (id: "berry_gathering", name: "Berry gathering", kind: Process, produces: [("fruit", 1)], work: 1,
+         conditions: [Resource("berries")]),
+        (id: "honey_hunting", name: "Honey hunting", kind: Dish, consumes: [("honey", 1)], effects: [Morale(0.05)], look: "honeycomb"),
+    ]),
+    (id: "hunting", name: "Hunting", tier: 0, starting: true, unlocks: [
+        (id: "hunter", name: "Hunter", kind: Job, produces: [("meat", 2), ("hide", 1), ("bone", 1)], conditions: [Resource("game")],
+         effects: [FoodYield(0.15)], look: "hunter"),
+        (id: "shore_gathering", name: "Shore gathering", kind: Job, produces: [("meat", 1)], conditions: [Resource("shellfish")],
+         effects: [FoodYield(0.1)], look: "shore_gatherer"),
+    ]),
+    (id: "cooking", name: "Cooking", tier: 1, requires: ["fire"], unlocks: [
+        (id: "roast_meat", name: "Roast meat", kind: Dish, consumes: [("meat", 1)], effects: [Morale(0.05), Healing(0.02)], look: "roast"),
+        (id: "fish_stew", name: "Fish stew", kind: Dish, consumes: [("fish", 2)], effects: [Morale(0.05)], look: "stew",
+         variants: [(when: [Biome(Rainforest), Biome(Savanna)], name: "Pepper fish stew", look: "pepper_stew")]),
+        (id: "earth_oven", name: "Earth oven", kind: Building, cost: [("stone", 4)], work: 2, footprint: (1, 1), effects: [FoodYield(0.05)], look: "earth_oven",
+         variants: [(when: [Coast], name: "Clam bake pit", look: "clam_pit", cost: [])]),
+    ]),
+    (id: "preservation", name: "Food preservation", tier: 2, requires: ["cooking"], spurs: [Famine, Cold], unlocks: [
+        (id: "salting", name: "Salting", kind: Process, consumes: [("fish", 2), ("salt", 1)], produces: [("preserved_food", 2)], work: 1),
+        (id: "smoking", name: "Smoking", kind: Process, consumes: [("meat", 2), ("wood", 1)], produces: [("preserved_food", 2)], work: 2),
+        (id: "freeze_drying", name: "Freeze drying", kind: Process, consumes: [("meat", 2)], produces: [("preserved_food", 2)], work: 2,
+         conditions: [Place([Biome(Tundra), Biome(Ice), Biome(Alpine), Biome(Snowcap)])]),
+        (id: "sun_drying", name: "Sun drying", kind: Process, consumes: [("fruit", 3)], produces: [("preserved_food", 2)], work: 1,
+         conditions: [Place([Biome(Desert), Biome(Savanna)])]),
+        (id: "smokehouse", name: "Smokehouse", kind: Building, cost: [("wood", 10)], work: 5, footprint: (1, 1), effects: [Storage(30)], look: "smokehouse"),
+    ]),
+    (id: "fishing", name: "Fishing", tier: 2, requires: ["cordage"], local: [Coast, River, Lake], needs: ["fish"], unlocks: [
+        (id: "fisher", name: "Fisher", kind: Job, effects: [FoodYield(0.2)], look: "fisher"),
+        (id: "fish_weir", name: "Fish weir", kind: Building, cost: [("wood", 8)], work: 5, footprint: (1, 2),
+         conditions: [Place([River, Lake])], effects: [FoodYield(0.3)], look: "fish_weir",
+         variants: [(when: [Biome(Swamp)], name: "Reed fish trap", look: "reed_trap", cost: [("reed", 8)])]),
+        (id: "fishing_net", name: "Fishing net", kind: Tool, cost: [("rope", 3)], work: 2, effects: [FoodYield(0.1)], look: "net"),
+    ]),
+    (id: "agriculture", name: "Grain farming", tier: 2, requires: ["foraging"], needs: ["wild_grain"], era: "farming",
+     effort: 2.0, spurs: [Famine, Crowding], unlocks: [
+        (id: "grain_field", name: "Grain field", kind: Building, work: 8, footprint: (3, 3), produces: [("grain", 6)],
+         conditions: [Place([Biome(Grassland), Biome(Savanna), Biome(TemperateForest), Biome(ColdSteppe), Biome(Desert), River])],
+         effects: [FoodYield(0.5)], look: "grain_field",
+         variants: [(when: [Biome(Desert)], name: "Oasis garden", look: "oasis_field")]),
+        (id: "farmer", name: "Farmer", kind: Job, effects: [FoodYield(0.2)], look: "farmer"),
+        (id: "cotton_field", name: "Cotton field", kind: Building, work: 8, footprint: (3, 3), produces: [("cotton", 3)],
+         conditions: [Place([Biome(Savanna), Biome(Grassland), Biome(Desert)])], look: "cotton_field"),
+    ]),
+    (id: "rice_farming", name: "Rice farming", tier: 2, requires: ["foraging"], local: [Biome(Swamp), River, Biome(Rainforest)],
+     needs: ["wild_rice"], era: "farming", effort: 2.0, spurs: [Famine, Flood], unlocks: [
+        (id: "rice_paddy", name: "Rice paddy", kind: Building, work: 12, footprint: (3, 3), produces: [("rice", 8)],
+         conditions: [Place([Biome(Swamp), River, Lake, Biome(Rainforest)])], effects: [FoodYield(0.6)], look: "paddy",
+         variants: [(when: [Hills, Mountain], name: "Terraced paddy", look: "terrace_paddy")]),
+    ]),
+    (id: "tuber_gardens", name: "Tuber gardens", tier: 2, requires: ["foraging"], needs: ["tubers"], era: "farming", effort: 1.5, spurs: [Famine], unlocks: [
+        (id: "tuber_garden", name: "Tuber garden", kind: Building, work: 6, footprint: (2, 2), produces: [("vegetables", 5)], effects: [FoodYield(0.4)],
+         look: "tuber_garden",
+         variants: [
+            (when: [Mountain, Biome(Alpine)], name: "Potato terraces", look: "potato_terrace"),
+            (when: [Biome(Rainforest)], name: "Forest garden", look: "forest_garden"),
+         ]),
+    ]),
+    (id: "goat_herding", name: "Goat herding", tier: 2, requires: ["hunting"], needs: ["wild_goat"], unlocks: [
+        (id: "goat_pen", name: "Goat pen", kind: Building, cost: [("wood", 6)], work: 4, footprint: (2, 2),
+         produces: [("milk", 2), ("meat", 1), ("hide", 1)], effects: [FoodYield(0.2)], look: "goat_pen",
+         variants: [(when: [Mountain, Biome(Alpine)], name: "Stone goat fold", look: "stone_fold", cost: [("stone", 8)])]),
+    ]),
+    (id: "sheep_herding", name: "Sheep herding", tier: 2, requires: ["hunting"], needs: ["wild_sheep"], unlocks: [
+        (id: "sheep_fold", name: "Sheep fold", kind: Building, cost: [("wood", 6)], work: 4, footprint: (2, 2),
+         produces: [("wool", 2), ("meat", 1), ("milk", 1)], effects: [FoodYield(0.15)], look: "sheep_fold",
+         variants: [(when: [Biome(ColdSteppe)], name: "Felt-walled fold", look: "felt_fold", cost: [("wool", 2)])]),
+        (id: "shepherd", name: "Shepherd", kind: Job, effects: [FoodYield(0.1)], look: "shepherd"),
+    ]),
+    (id: "reindeer_herding", name: "Reindeer herding", tier: 2, requires: ["hunting"], local: [Biome(Tundra), Biome(Taiga)], needs: ["reindeer"], unlocks: [
+        (id: "reindeer_corral", name: "Reindeer corral", kind: Building, cost: [("wood", 4), ("bone", 4)], work: 4, footprint: (3, 2),
+         produces: [("milk", 1), ("meat", 2), ("hide", 2)], effects: [FoodYield(0.25)], look: "reindeer_corral"),
+    ]),
+    (id: "cattle_herding", name: "Cattle herding", tier: 3, requires: ["hunting"], any_of: ["agriculture", "rice_farming", "tuber_gardens"],
+     needs: ["wild_cattle"], effort: 1.5, unlocks: [
+        (id: "cattle_byre", name: "Cattle byre", kind: Building, cost: [("wood", 12)], work: 6, footprint: (3, 2),
+         produces: [("milk", 3), ("meat", 2), ("hide", 1)], effects: [FoodYield(0.3)], look: "byre",
+         variants: [(when: [Biome(Savanna)], name: "Thorn kraal", look: "kraal", cost: [("wood", 4)])]),
+        (id: "herder", name: "Herder", kind: Job, effects: [FoodYield(0.1)], look: "herder"),
+    ]),
+    (id: "camel_herding", name: "Camel herding", tier: 3, requires: ["hunting"], local: [Biome(Desert), Biome(ColdSteppe)], needs: ["camel"], unlocks: [
+        (id: "camel_pen", name: "Camel pen", kind: Building, cost: [("stone", 6)], work: 4, footprint: (3, 2),
+         produces: [("milk", 2), ("hide", 1)], effects: [FoodYield(0.2), Capacity(20)], look: "camel_pen"),
+    ]),
+    (id: "baking_brewing", name: "Baking and brewing", tier: 3, requires: ["pottery"], any_of: ["agriculture", "rice_farming"], unlocks: [
+        (id: "bread", name: "Bread", kind: Dish, consumes: [("grain", 2)], effects: [Morale(0.1)], look: "bread",
+         variants: [(when: [Biome(Desert), Biome(Savanna)], name: "Flatbread", look: "flatbread")]),
+        (id: "rice_cake", name: "Rice cakes", kind: Dish, consumes: [("rice", 2)], effects: [Morale(0.1)], look: "rice_cake"),
+        (id: "brewing", name: "Brewing", kind: Process, consumes: [("grain", 3)], produces: [("beer", 2)], work: 3),
+        (id: "rice_wine", name: "Rice wine", kind: Process, consumes: [("rice", 3)], produces: [("beer", 2)], work: 3),
+        (id: "bakery", name: "Bakery", kind: Building, cost: [("brick", 10), ("wood", 6)], work: 8, footprint: (1, 1), effects: [FoodYield(0.2)], look: "bakery"),
+        (id: "feast", name: "Feast", kind: Rite, cost: [("beer", 4), ("meat", 4)], effects: [Morale(0.3), Loyalty(0.1)], look: "feast"),
+    ]),
+    (id: "dairy", name: "Dairy", tier: 4, requires: ["pottery"], any_of: ["goat_herding", "sheep_herding", "reindeer_herding", "cattle_herding", "camel_herding"], unlocks: [
+        (id: "cheesemaking", name: "Cheesemaking", kind: Process, consumes: [("milk", 3), ("salt", 1)], produces: [("cheese", 2)], work: 2),
+        (id: "butter_tea", name: "Butter tea", kind: Dish, consumes: [("milk", 2)], effects: [Morale(0.05), Healing(0.02)], look: "butter_tea",
+         variants: [(when: [Biome(ColdSteppe)], name: "Fermented mare's milk", look: "kumis")]),
+    ]),
+    (id: "irrigation", name: "Irrigation", tier: 4, requires: ["pottery"], any_of: ["agriculture", "rice_farming", "tuber_gardens"],
+     local: [River, Lake], effort: 1.5, spurs: [Drought, Famine], unlocks: [
+        (id: "canal", name: "Irrigation canal", kind: Building, work: 20, footprint: (1, 4), conditions: [Place([River, Lake])],
+         effects: [FoodYield(0.4)], look: "canal",
+         variants: [(when: [Biome(Desert)], name: "Qanat", look: "qanat", cost: [("stone", 10)])]),
+        (id: "water_wheel", name: "Water-lifting wheel", kind: Building, cost: [("wood", 16), ("rope", 4)], work: 10, footprint: (1, 1),
+         conditions: [Place([River])], effects: [FoodYield(0.2)], look: "noria"),
+    ]),
+    (id: "orchards", name: "Orchards and vineyards", tier: 4, requires: ["carpentry"], any_of: ["agriculture", "tuber_gardens"],
+     local: [Biome(TemperateForest), Biome(Grassland), Biome(Savanna), Hills], unlocks: [
+        (id: "orchard", name: "Orchard", kind: Building, work: 10, footprint: (3, 3), produces: [("fruit", 5)], effects: [FoodYield(0.3)], look: "orchard",
+         variants: [
+            (when: [Biome(Desert), Biome(Savanna)], name: "Date grove", look: "date_grove"),
+            (when: [Hills], name: "Hillside vineyard", look: "vineyard"),
+         ]),
+        (id: "winemaking", name: "Winemaking", kind: Process, consumes: [("fruit", 3), ("pottery", 1)], produces: [("wine", 2)], work: 3),
+    ]),
+    (id: "spice_cultivation", name: "Spice cultivation", tier: 4, any_of: ["agriculture", "rice_farming", "tuber_gardens"], local: [Biome(Rainforest)],
+     needs: ["spices"], spurs: [Trade], unlocks: [
+        (id: "spice_garden", name: "Spice garden", kind: Building, work: 10, footprint: (2, 2), produces: [("spices", 2)],
+         conditions: [Place([Biome(Rainforest), Biome(Savanna)])], effects: [Trade(0.3)], look: "spice_garden"),
+        (id: "curry", name: "Spiced curry", kind: Dish, consumes: [("spices", 1), ("rice", 2)], effects: [Morale(0.15)], look: "curry"),
+    ]),
+    (id: "plough", name: "The plough", tier: 5, requires: ["cattle_herding", "copper_tools"], any_of: ["agriculture", "rice_farming"], effort: 1.5, unlocks: [
+        (id: "ox_plough", name: "Ox plough", kind: Tool, cost: [("wood", 4), ("copper", 1)], work: 3, effects: [FoodYield(0.5)], look: "plough"),
+    ]),
+    (id: "crop_rotation", name: "Crop rotation", tier: 6, requires: ["plough"], spurs: [Famine], unlocks: [
+        (id: "three_field_system", name: "Three-field system", kind: Law, effects: [FoodYield(0.4)], look: "fields"),
+        (id: "windmill", name: "Windmill", kind: Building, cost: [("wood", 30), ("stone", 20), ("cloth", 6)], work: 25, footprint: (1, 1),
+         effects: [FoodYield(0.3)], look: "windmill",
+         variants: [(when: [River], name: "Watermill", look: "watermill")]),
+    ]),
+    (id: "canning", name: "Canning", tier: 9, requires: ["steam_power", "preservation"], unlocks: [
+        (id: "cannery", name: "Cannery", kind: Building, cost: [("steel", 20), ("machine_parts", 6), ("brick", 20)], work: 30, footprint: (2, 2),
+         effects: [Storage(400)], look: "cannery"),
+        (id: "tinned_food", name: "Tinned food", kind: Process, consumes: [("meat", 2), ("steel", 1)], produces: [("preserved_food", 4)], work: 1,
+         conditions: [Building("cannery")]),
+    ]),
+    (id: "mechanised_farming", name: "Mechanised farming", tier: 9, requires: ["steam_power", "crop_rotation"], unlocks: [
+        (id: "steam_tractor", name: "Steam tractor", kind: Vessel, cost: [("steel", 20), ("machine_parts", 10)], work: 20,
+         consumes: [("coal", 1)], effects: [FoodYield(1.0)], look: "steam_tractor"),
+    ]),
+    (id: "refrigeration", name: "Refrigeration", tier: 10, requires: ["electricity", "canning"], unlocks: [
+        (id: "cold_store", name: "Cold store", kind: Building, cost: [("steel", 20), ("wire", 10), ("concrete", 20)], work: 30, footprint: (2, 2),
+         consumes: [("electricity", 1)], effects: [Storage(800), Healing(0.05)], look: "cold_store"),
+    ]),
+])

@@ -17,7 +17,7 @@ pub fn conception_propensity(c:ReproductionContext)->f32 {
     let relationship=((c.partner_relation.trust+1.0)*0.5*0.45+(c.partner_relation.affection+1.0)*0.5*0.55).clamp(0.0,1.0);
     let body=c.health.clamp(0.0,1.0)*(1.0-c.hunger.clamp(0.0,1.0));
     let environment=(1.0-c.safety_need.clamp(0.0,1.0)*0.6)*(1.0-c.household_pressure.clamp(0.0,1.0)*0.75);
-    (relationship*body*environment*(0.35+0.65*c.care_trait.clamp(0.0,1.0))*0.25).clamp(0.0,0.25)
+    (relationship*body*environment*(0.35+0.65*c.care_trait.clamp(0.0,1.0))*0.7).clamp(0.0,0.45)
 }
 
 pub fn annual_mortality_risk(life:&LifeHistory,year:f64,health:f32)->f32 {

@@ -1,0 +1,85 @@
+// Transport: rafts and sledges to railways. Water peoples take to boats,
+// steppe peoples to horses, snow peoples to sleds.
+(domain: Transport, nodes: [
+    (id: "sledges", name: "Sledges", tier: 1, requires: ["knapping"], local: [Biome(Tundra), Biome(Ice), Biome(Snowcap), Biome(Taiga)], unlocks: [
+        (id: "sled", name: "Sled", kind: Vessel, cost: [("wood", 4), ("rope", 1)], work: 3, effects: [Capacity(20), Speed(0.2)], look: "sled",
+         variants: [(when: [Biome(Ice), Biome(Tundra)], name: "Bone sled", look: "bone_sled", cost: [("bone", 6), ("hide", 1)])]),
+        (id: "snowshoes", name: "Snowshoes", kind: Tool, cost: [("wood", 1), ("rope", 1)], work: 1, effects: [Speed(0.2)], look: "snowshoes"),
+    ]),
+    (id: "rafts", name: "Rafts and canoes", tier: 2, requires: ["cordage"], local: [Coast, River, Lake], spurs: [Flood, Trade], unlocks: [
+        (id: "raft", name: "Raft", kind: Vessel, cost: [("wood", 6), ("rope", 2)], work: 3, effects: [Capacity(10)], look: "raft",
+         variants: [(when: [Biome(Swamp), River], name: "Reed boat", look: "reed_boat", cost: [("reed", 8), ("rope", 1)])]),
+        (id: "dugout", name: "Dugout canoe", kind: Vessel, cost: [("wood", 8)], work: 6, effects: [Capacity(8), Speed(0.3)], look: "dugout",
+         variants: [
+            (when: [Biome(Tundra), Biome(Ice)], name: "Kayak", look: "kayak", cost: [("bone", 4), ("hide", 3)]),
+            (when: [Biome(Rainforest)], name: "Outrigger canoe", look: "outrigger", cost: [("wood", 10), ("rope", 2)]),
+         ]),
+        (id: "landing", name: "Landing", kind: Building, cost: [("wood", 8)], work: 4, footprint: (1, 2), conditions: [Place([Coast, River, Lake])],
+         effects: [Trade(0.1)], look: "landing"),
+    ]),
+    (id: "pack_animals", name: "Pack animals", tier: 4, any_of: ["goat_herding", "sheep_herding", "reindeer_herding", "cattle_herding", "camel_herding"],
+     spurs: [Trade], unlocks: [
+        (id: "pack_saddle", name: "Pack saddle", kind: Tool, cost: [("leather", 2), ("wood", 1)], work: 2, effects: [Capacity(40)], look: "pack_saddle",
+         variants: [
+            (when: [Biome(Desert)], name: "Camel caravan", look: "caravan"),
+            (when: [Biome(Tundra), Biome(Taiga)], name: "Reindeer pack", look: "reindeer_pack"),
+            (when: [Mountain, Biome(Alpine)], name: "Mountain pack train", look: "pack_train"),
+         ]),
+        (id: "caravan_camp", name: "Caravan camp", kind: Building, cost: [("wood", 8)], work: 6, footprint: (2, 2), effects: [Trade(0.2)], look: "caravan_camp",
+         variants: [(when: [Biome(Desert)], name: "Caravanserai", look: "caravanserai", cost: [("brick", 30)])]),
+    ]),
+    (id: "wheel", name: "The wheel", tier: 3, requires: ["carpentry"], spurs: [Trade], unlocks: [
+        (id: "cart", name: "Cart", kind: Vessel, cost: [("wood", 10)], work: 6, effects: [Capacity(60)], look: "cart"),
+        (id: "dirt_road", name: "Dirt road", kind: Building, work: 2, footprint: (1, 1), effects: [Speed(0.2)], look: "dirt_road"),
+        (id: "potters_wheel", name: "Potter's wheel", kind: Tool, cost: [("wood", 3), ("stone", 2)], work: 3, effects: [Speed(0.2)], look: "potters_wheel"),
+    ]),
+    (id: "horse_riding", name: "Horse riding", tier: 5, requires: ["pack_animals"], needs: ["wild_horse"], effort: 1.5, spurs: [War, Raided], unlocks: [
+        (id: "saddle", name: "Saddle", kind: Tool, cost: [("leather", 3), ("wood", 1)], work: 3, effects: [Speed(0.6)], look: "saddle"),
+        (id: "horse_herd", name: "Horse herd", kind: Building, cost: [("wood", 16)], work: 8, footprint: (3, 3), produces: [("milk", 1), ("hide", 1)],
+         effects: [Capacity(10), Speed(0.2)], look: "horse_herd"),
+    ]),
+    (id: "sailing", name: "Sailing", tier: 4, requires: ["rafts", "carpentry"], local: [Coast, Lake], effort: 1.5, spurs: [Trade], unlocks: [
+        (id: "sailboat", name: "Sailboat", kind: Vessel, cost: [("wood", 20), ("cloth", 6), ("rope", 6)], work: 20, effects: [Capacity(80), Speed(0.5)], look: "sailboat",
+         variants: [
+            (when: [Biome(Rainforest), Biome(Beach)], name: "Double-hulled canoe", look: "double_canoe", cost: [("wood", 24), ("rope", 8), ("reed", 6)]),
+            (when: [Biome(Desert), Biome(Savanna)], name: "Lateen dhow", look: "dhow"),
+         ]),
+        (id: "dock", name: "Dock", kind: Building, cost: [("wood", 30)], work: 16, footprint: (2, 3), conditions: [Place([Coast, Lake])],
+         effects: [Trade(0.3), Capacity(20)], look: "dock"),
+        (id: "war_galley", name: "War galley", kind: Vessel, cost: [("wood", 40), ("cloth", 8), ("rope", 10)], work: 40,
+         conditions: [Building("dock")], effects: [Attack(6), Capacity(30)], look: "galley"),
+    ]),
+    (id: "chariots", name: "Chariots", tier: 6, requires: ["wheel", "horse_riding", "bronze_alloying"], spurs: [War], unlocks: [
+        (id: "war_chariot", name: "War chariot", kind: Vessel, cost: [("wood", 12), ("bronze", 4), ("leather", 2)], work: 12,
+         effects: [Attack(5), Speed(0.6)], look: "chariot"),
+    ]),
+    (id: "roads", name: "Paved roads", tier: 5, requires: ["masonry", "wheel"], spurs: [Trade, War], unlocks: [
+        (id: "paved_road", name: "Paved road", kind: Building, cost: [("stone", 2)], work: 2, footprint: (1, 1), effects: [Speed(0.4)], look: "paved_road"),
+        (id: "waystation", name: "Waystation", kind: Building, cost: [("stone", 20), ("wood", 10)], work: 16, footprint: (2, 2),
+         effects: [Trade(0.2), Vision(10)], look: "waystation"),
+    ]),
+    (id: "navigation", name: "Navigation", tier: 6, requires: ["sailing", "sky_calendar"], effort: 2.0, spurs: [Trade], unlocks: [
+        (id: "ocean_ship", name: "Ocean ship", kind: Vessel, cost: [("wood", 60), ("cloth", 16), ("rope", 16), ("tar", 4)], work: 60,
+         conditions: [Building("dock")], effects: [Capacity(200), Speed(0.6)], look: "ocean_ship"),
+        (id: "lighthouse", name: "Lighthouse", kind: Building, cost: [("stone", 50), ("wood", 10)], work: 40, footprint: (1, 1),
+         conditions: [Place([Coast])], effects: [Vision(30), Trade(0.2)], look: "lighthouse"),
+    ]),
+    (id: "railways", name: "Railways", tier: 9, requires: ["steam_power", "roads"], effort: 2.0, unlocks: [
+        (id: "rail_track", name: "Rail track", kind: Building, cost: [("steel", 2), ("wood", 1)], work: 2, footprint: (1, 1), effects: [Speed(1.0)], look: "rail"),
+        (id: "locomotive", name: "Locomotive", kind: Vessel, cost: [("steel", 30), ("machine_parts", 10)], work: 30, consumes: [("coal", 2)],
+         effects: [Capacity(400), Speed(1.0)], look: "locomotive"),
+        (id: "railway_station", name: "Railway station", kind: Building, cost: [("brick", 40), ("steel", 10)], work: 30, footprint: (3, 2),
+         effects: [Trade(0.4)], look: "station"),
+    ]),
+    (id: "steamships", name: "Steamships", tier: 9, requires: ["steam_power", "navigation"], unlocks: [
+        (id: "steamship", name: "Steamship", kind: Vessel, cost: [("steel", 60), ("machine_parts", 12)], work: 60, consumes: [("coal", 3)],
+         conditions: [Building("dock")], effects: [Capacity(400), Speed(0.9)], look: "steamship"),
+        (id: "ironclad", name: "Ironclad", kind: Vessel, cost: [("steel", 90), ("machine_parts", 16)], work: 90, consumes: [("coal", 4)],
+         conditions: [Building("dock"), Resource("gunpowder")], effects: [Attack(18), Armor(10)], look: "ironclad"),
+    ]),
+    (id: "motor_vehicles", name: "Motor vehicles", tier: 10, requires: ["oil_refining", "vulcanisation"], effort: 2.0, unlocks: [
+        (id: "motor_truck", name: "Motor truck", kind: Vessel, cost: [("steel", 20), ("machine_parts", 10), ("rubber", 4)], work: 20,
+         consumes: [("fuel", 1)], effects: [Capacity(120), Speed(1.2)], look: "truck"),
+        (id: "asphalt_road", name: "Asphalt road", kind: Building, cost: [("fuel", 1), ("stone", 2)], work: 2, footprint: (1, 1), effects: [Speed(0.8)], look: "asphalt"),
+    ]),
+])

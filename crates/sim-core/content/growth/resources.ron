@@ -1,0 +1,192 @@
+// Resources. `sources` list where a resource occurs naturally; `chance` is the
+// share of regions with that place that actually hold it. Resources without
+// sources are only obtainable by producing them (see `produces` in domain files).
+(resources: [
+    // --- Wild food ---
+    (id: "berries", name: "Berries", category: Food, sources: [
+        (place: Biome(TemperateForest)), (place: Biome(Taiga)), (place: Biome(Rainforest)),
+        (place: Biome(Grassland), chance: 0.7), (place: Biome(Savanna), chance: 0.6), (place: Biome(Tundra), chance: 0.5),
+    ]),
+    (id: "wild_grain", name: "Wild grain", category: Food, sources: [
+        (place: Biome(Grassland), chance: 0.85), (place: Biome(Savanna), chance: 0.6),
+        (place: Biome(ColdSteppe), chance: 0.6), (place: Biome(Desert), chance: 0.15),
+    ]),
+    (id: "wild_rice", name: "Wild rice", category: Food, sources: [
+        (place: Biome(Swamp), chance: 0.7), (place: Biome(Rainforest), chance: 0.4), (place: River, chance: 0.25),
+    ]),
+    (id: "tubers", name: "Wild tubers", category: Food, sources: [
+        (place: Biome(Rainforest), chance: 0.9), (place: Biome(Savanna), chance: 0.6),
+        (place: Biome(TemperateForest), chance: 0.4), (place: Biome(Alpine), chance: 0.3),
+    ]),
+    (id: "game", name: "Game animals", category: Animal, sources: [
+        (place: Biome(TemperateForest)), (place: Biome(Taiga)), (place: Biome(Grassland)), (place: Biome(Savanna)),
+        (place: Biome(Rainforest), chance: 0.8), (place: Biome(ColdSteppe), chance: 0.8), (place: Biome(Tundra), chance: 0.7),
+        (place: Biome(Swamp), chance: 0.6), (place: Biome(Alpine), chance: 0.5), (place: Biome(Desert), chance: 0.3),
+    ]),
+    (id: "fish", name: "Fish", category: Food, sources: [(place: Coast), (place: River), (place: Lake)]),
+    (id: "shellfish", name: "Shellfish", category: Food, sources: [(place: Coast, chance: 0.7)]),
+    (id: "salt", name: "Salt", category: Mineral, sources: [
+        (place: Coast, chance: 0.6), (place: Biome(Desert), chance: 0.5),
+        (place: Biome(ColdSteppe), chance: 0.3), (place: Mountain, chance: 0.15),
+    ]),
+    (id: "honey", name: "Wild honey", category: Food, sources: [
+        (place: Biome(TemperateForest), chance: 0.6), (place: Biome(Rainforest), chance: 0.5),
+        (place: Biome(Grassland), chance: 0.4), (place: Biome(Savanna), chance: 0.4),
+    ]),
+    (id: "herbs", name: "Medicinal herbs", category: Food, sources: [
+        (place: Biome(TemperateForest)), (place: Biome(Rainforest)), (place: Biome(Swamp), chance: 0.8),
+        (place: Biome(Grassland), chance: 0.7), (place: Biome(Taiga), chance: 0.5),
+        (place: Biome(Alpine), chance: 0.5), (place: Biome(Savanna), chance: 0.5),
+    ]),
+    (id: "spices", name: "Spices", category: Luxury, sources: [
+        (place: Biome(Rainforest), chance: 0.5), (place: Biome(Savanna), chance: 0.15),
+    ]),
+
+    // --- Wild animals that can be domesticated ---
+    (id: "wild_goat", name: "Wild goats", category: Animal, sources: [
+        (place: Mountain, chance: 0.8), (place: Hills, chance: 0.7), (place: Biome(Alpine), chance: 0.6),
+    ]),
+    (id: "wild_sheep", name: "Wild sheep", category: Animal, sources: [
+        (place: Hills, chance: 0.5), (place: Mountain, chance: 0.5), (place: Biome(ColdSteppe), chance: 0.5),
+    ]),
+    (id: "wild_cattle", name: "Wild cattle", category: Animal, sources: [
+        (place: Biome(Grassland), chance: 0.6), (place: Biome(Savanna), chance: 0.5), (place: Biome(TemperateForest), chance: 0.3),
+    ]),
+    (id: "wild_horse", name: "Wild horses", category: Animal, sources: [
+        (place: Biome(ColdSteppe), chance: 0.7), (place: Biome(Grassland), chance: 0.4),
+    ]),
+    (id: "camel", name: "Wild camels", category: Animal, sources: [
+        (place: Biome(Desert), chance: 0.6), (place: Biome(ColdSteppe), chance: 0.3),
+    ]),
+    (id: "reindeer", name: "Reindeer", category: Animal, sources: [
+        (place: Biome(Tundra), chance: 0.9), (place: Biome(Taiga), chance: 0.5),
+    ]),
+
+    // --- Plants and wood ---
+    (id: "wood", name: "Wood", category: Wood, sources: [
+        (place: Biome(TemperateForest)), (place: Biome(Taiga)), (place: Biome(Rainforest)),
+        (place: Biome(Swamp), chance: 0.8), (place: Biome(Savanna), chance: 0.5), (place: River, chance: 0.4),
+        (place: Biome(Grassland), chance: 0.3), (place: Biome(Alpine), chance: 0.2),
+    ]),
+    (id: "hardwood", name: "Hardwood", category: Wood, sources: [
+        (place: Biome(Rainforest), chance: 0.8), (place: Biome(TemperateForest), chance: 0.6),
+    ]),
+    (id: "bamboo", name: "Bamboo", category: Wood, sources: [
+        (place: Biome(Rainforest), chance: 0.6), (place: Biome(Swamp), chance: 0.3),
+    ]),
+    (id: "reed", name: "Reed", category: Fiber, sources: [
+        (place: Biome(Swamp)), (place: River, chance: 0.8), (place: Lake, chance: 0.8),
+    ]),
+    (id: "palm", name: "Palm", category: Wood, sources: [
+        (place: Biome(Beach), chance: 0.6), (place: Biome(Rainforest), chance: 0.5), (place: Biome(Desert), chance: 0.25),
+    ]),
+    (id: "wild_fiber", name: "Plant fibre", category: Fiber, sources: [
+        (place: Biome(Grassland), chance: 0.8), (place: Biome(Savanna), chance: 0.8), (place: Biome(Swamp), chance: 0.6),
+        (place: Biome(Rainforest), chance: 0.6), (place: Biome(TemperateForest), chance: 0.5), (place: Biome(ColdSteppe), chance: 0.5),
+    ]),
+    (id: "latex", name: "Latex", category: Crafted, sources: [(place: Biome(Rainforest), chance: 0.5)]),
+    (id: "dye_plants", name: "Dye plants", category: Luxury, sources: [
+        (place: Biome(Rainforest), chance: 0.5), (place: Biome(TemperateForest), chance: 0.4),
+        (place: Biome(Savanna), chance: 0.3), (place: Biome(Grassland), chance: 0.3),
+    ]),
+    (id: "incense", name: "Incense resin", category: Luxury, sources: [
+        (place: Biome(Desert), chance: 0.2), (place: Biome(Savanna), chance: 0.2),
+    ]),
+
+    // --- Stone, earth and ore ---
+    (id: "stone", name: "Stone", category: Stone, sources: [
+        (place: Hills), (place: Mountain), (place: Biome(Alpine)), (place: Biome(Desert), chance: 0.7),
+        (place: Biome(Tundra), chance: 0.6), (place: Biome(Snowcap), chance: 0.5), (place: Biome(ColdSteppe), chance: 0.4),
+        (place: Biome(Beach), chance: 0.3), (place: Biome(Grassland), chance: 0.2),
+    ]),
+    (id: "flint", name: "Flint", category: Stone, sources: [
+        (place: Hills, chance: 0.6), (place: Biome(Beach), chance: 0.4),
+        (place: Biome(Grassland), chance: 0.3), (place: Biome(Desert), chance: 0.3),
+    ]),
+    (id: "obsidian", name: "Obsidian", category: Stone, sources: [(place: Mountain, chance: 0.2)]),
+    (id: "clay", name: "Clay", category: Stone, sources: [
+        (place: River), (place: Lake), (place: Biome(Swamp), chance: 0.9),
+        (place: Biome(Grassland), chance: 0.3), (place: Biome(Savanna), chance: 0.3),
+    ]),
+    (id: "sand", name: "Sand", category: Stone, sources: [(place: Biome(Beach)), (place: Biome(Desert)), (place: River, chance: 0.5)]),
+    (id: "limestone", name: "Limestone", category: Stone, sources: [
+        (place: Hills, chance: 0.5), (place: Mountain, chance: 0.3), (place: Coast, chance: 0.3),
+    ]),
+    (id: "marble", name: "Marble", category: Luxury, sources: [(place: Mountain, chance: 0.2), (place: Hills, chance: 0.1)]),
+    (id: "ochre", name: "Ochre", category: Mineral, sources: [
+        (place: Hills, chance: 0.5), (place: Biome(Desert), chance: 0.5), (place: Biome(Savanna), chance: 0.4),
+    ]),
+    (id: "copper_ore", name: "Copper ore", category: Ore, sources: [
+        (place: Mountain, chance: 0.45), (place: Hills, chance: 0.4), (place: Biome(Desert), chance: 0.15),
+    ]),
+    (id: "tin_ore", name: "Tin ore", category: Ore, sources: [
+        (place: Mountain, chance: 0.2), (place: Hills, chance: 0.12), (place: River, chance: 0.08),
+    ]),
+    (id: "iron_ore", name: "Iron ore", category: Ore, sources: [
+        (place: Hills, chance: 0.5), (place: Mountain, chance: 0.5), (place: Biome(Swamp), chance: 0.35),
+        (place: Biome(Desert), chance: 0.2), (place: Biome(Tundra), chance: 0.15),
+    ]),
+    (id: "gold_ore", name: "Gold ore", category: Ore, sources: [
+        (place: Mountain, chance: 0.15), (place: River, chance: 0.12), (place: Biome(Desert), chance: 0.1),
+    ]),
+    (id: "silver_ore", name: "Silver ore", category: Ore, sources: [(place: Mountain, chance: 0.18), (place: Hills, chance: 0.08)]),
+    (id: "coal", name: "Coal", category: Mineral, sources: [
+        (place: Hills, chance: 0.3), (place: Mountain, chance: 0.25), (place: Biome(Taiga), chance: 0.1), (place: Biome(Tundra), chance: 0.1),
+    ]),
+    (id: "peat", name: "Peat", category: Mineral, sources: [(place: Biome(Swamp), chance: 0.9), (place: Biome(Tundra), chance: 0.4)]),
+    (id: "sulfur", name: "Sulfur", category: Mineral, sources: [(place: Mountain, chance: 0.15), (place: Biome(Desert), chance: 0.05)]),
+    (id: "saltpeter", name: "Saltpeter", category: Mineral, sources: [
+        (place: Biome(Desert), chance: 0.3), (place: Biome(ColdSteppe), chance: 0.2), (place: Hills, chance: 0.1),
+    ]),
+    (id: "crude_oil", name: "Crude oil", category: Mineral, sources: [
+        (place: Biome(Desert), chance: 0.2), (place: Biome(ColdSteppe), chance: 0.12),
+        (place: Coast, chance: 0.08), (place: Biome(Swamp), chance: 0.08),
+    ]),
+
+    // --- Treasures ---
+    (id: "amber", name: "Amber", category: Luxury, sources: [(place: Coast, chance: 0.12), (place: Biome(Taiga), chance: 0.08)]),
+    (id: "pearls", name: "Pearls", category: Luxury, sources: [(place: Coast, chance: 0.15)]),
+    (id: "ivory", name: "Ivory", category: Luxury, sources: [(place: Biome(Savanna), chance: 0.3), (place: Biome(Rainforest), chance: 0.2)]),
+
+    // --- Produced only ---
+    (id: "meat", name: "Meat", category: Food),
+    (id: "hide", name: "Hide", category: Animal),
+    (id: "bone", name: "Bone", category: Animal),
+    (id: "fur", name: "Fur", category: Animal),
+    (id: "grain", name: "Grain", category: Food),
+    (id: "rice", name: "Rice", category: Food),
+    (id: "vegetables", name: "Vegetables", category: Food),
+    (id: "fruit", name: "Fruit", category: Food),
+    (id: "milk", name: "Milk", category: Food),
+    (id: "wool", name: "Wool", category: Fiber),
+    (id: "cotton", name: "Cotton", category: Fiber),
+    (id: "cheese", name: "Cheese", category: Food),
+    (id: "beer", name: "Beer", category: Luxury),
+    (id: "wine", name: "Wine", category: Luxury),
+    (id: "preserved_food", name: "Preserved food", category: Food),
+    (id: "medicine", name: "Medicine", category: Crafted),
+    (id: "rope", name: "Rope", category: Crafted),
+    (id: "leather", name: "Leather", category: Crafted),
+    (id: "cloth", name: "Cloth", category: Crafted),
+    (id: "pottery", name: "Pottery", category: Crafted),
+    (id: "charcoal", name: "Charcoal", category: Mineral),
+    (id: "brick", name: "Brick", category: Stone),
+    (id: "lime", name: "Lime", category: Mineral),
+    (id: "tar", name: "Tar", category: Crafted),
+    (id: "copper", name: "Copper", category: Metal),
+    (id: "bronze", name: "Bronze", category: Metal),
+    (id: "gold", name: "Gold", category: Metal),
+    (id: "silver", name: "Silver", category: Metal),
+    (id: "glass", name: "Glass", category: Crafted),
+    (id: "iron", name: "Iron", category: Metal),
+    (id: "steel", name: "Steel", category: Metal),
+    (id: "paper", name: "Paper", category: Crafted),
+    (id: "concrete", name: "Concrete", category: Stone),
+    (id: "coke", name: "Coke", category: Mineral),
+    (id: "gunpowder", name: "Gunpowder", category: Crafted),
+    (id: "machine_parts", name: "Machine parts", category: Crafted),
+    (id: "rubber", name: "Rubber", category: Crafted),
+    (id: "fuel", name: "Fuel", category: Mineral),
+    (id: "wire", name: "Copper wire", category: Crafted),
+    (id: "electricity", name: "Electricity", category: Crafted),
+])

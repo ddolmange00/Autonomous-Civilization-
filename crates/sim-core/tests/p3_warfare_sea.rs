@@ -22,9 +22,9 @@ fn ground_truth_registry_is_seeded() {
 #[test]
 fn warfare_ledgers_stay_coherent_with_monster_pressure() {
     let mut sim = Sandbox::new(847291);
-    // Peaceful years for tools to be invented, then a prowler in the largest village.
-    let peace = sim.year + 15.0;
-    while sim.year < peace {
+    // Peaceful years until the first tool is invented (bounded), then a prowler in the largest village.
+    let peace = sim.year + 40.0;
+    while sim.year < peace && sim.draft_count == 0 {
         sim.step(5.0);
         if sim.residents.iter().all(|r| r.health <= 0.0) {
             break;

@@ -1,0 +1,44 @@
+// Armour: hide wraps to steel helmets, rendered from what each land offers.
+(domain: Armour, nodes: [
+    (id: "shields", name: "Shields", tier: 1, requires: ["knapping"], spurs: [Raided, War], unlocks: [
+        (id: "wooden_shield", name: "Wooden shield", kind: Armour, cost: [("wood", 3)], work: 2, effects: [Armor(1)], look: "wood_shield",
+         variants: [
+            (when: [Biome(Swamp)], name: "Wicker shield", look: "wicker_shield", cost: [("reed", 3)]),
+            (when: [Biome(Savanna), Biome(Grassland)], name: "Hide shield", look: "hide_shield", cost: [("hide", 2), ("wood", 1)]),
+            (when: [Biome(Tundra), Biome(Ice)], name: "Whalebone shield", look: "bone_shield", cost: [("bone", 3)]),
+         ]),
+    ]),
+    (id: "hide_armour", name: "Hide armour", tier: 2, requires: ["hide_working"], spurs: [Cold, War], unlocks: [
+        (id: "hide_coat", name: "Hide coat", kind: Armour, cost: [("leather", 2)], work: 3, effects: [Armor(1.5)], look: "hide_coat",
+         variants: [(when: [Biome(Tundra), Biome(Taiga), Biome(Snowcap), Biome(Ice)], name: "Fur parka", look: "parka", cost: [("fur", 2), ("leather", 1)])]),
+        (id: "hardened_leather", name: "Hardened leather cap", kind: Armour, cost: [("leather", 1)], work: 2, effects: [Armor(0.5)], look: "leather_cap"),
+    ]),
+    (id: "padded_armour", name: "Padded armour", tier: 3, requires: ["weaving"], unlocks: [
+        (id: "quilted_jacket", name: "Quilted jacket", kind: Armour, cost: [("cloth", 4)], work: 4, effects: [Armor(2)], look: "quilted",
+         variants: [(when: [Biome(Rainforest), Biome(Savanna)], name: "Cotton armour", look: "cotton_armour", cost: [("cotton", 4)])]),
+    ]),
+    (id: "bone_armour", name: "Bone lamellar", tier: 3, requires: ["hide_working"], local: [Biome(Tundra), Biome(Taiga), Biome(ColdSteppe), Biome(Ice)], unlocks: [
+        (id: "bone_lamellar", name: "Bone lamellar", kind: Armour, cost: [("bone", 6), ("leather", 2)], work: 6, effects: [Armor(3)], look: "bone_lamellar"),
+    ]),
+    (id: "bronze_armour", name: "Bronze armour", tier: 5, requires: ["bronze_alloying"], unlocks: [
+        (id: "bronze_scale", name: "Bronze scale armour", kind: Armour, cost: [("bronze", 4), ("leather", 2)], work: 8, effects: [Armor(4)], look: "bronze_scale"),
+        (id: "bronze_helmet", name: "Bronze helmet", kind: Armour, cost: [("bronze", 2)], work: 4, effects: [Armor(1.5)], look: "bronze_helmet",
+         variants: [(lean: Confrontation, name: "Crested war helm", look: "crested_helm")]),
+    ]),
+    (id: "mail", name: "Mail", tier: 6, requires: ["iron_smelting"], effort: 1.5, unlocks: [
+        (id: "mail_shirt", name: "Mail shirt", kind: Armour, cost: [("iron", 5), ("leather", 1)], work: 12, effects: [Armor(5)], look: "mail"),
+        (id: "iron_helmet", name: "Iron helmet", kind: Armour, cost: [("iron", 2)], work: 4, effects: [Armor(2)], look: "iron_helmet"),
+    ]),
+    (id: "plate_armour", name: "Plate armour", tier: 7, requires: ["steelmaking"], effort: 2.0, unlocks: [
+        (id: "plate", name: "Plate armour", kind: Armour, cost: [("steel", 6), ("leather", 2)], work: 16, effects: [Armor(7), Speed(-0.1)], look: "plate",
+         variants: [(when: [Biome(Desert), Biome(Savanna)], name: "Mirror armour", look: "mirror_armour", cost: [("steel", 4), ("cloth", 3)])]),
+    ]),
+    (id: "barding", name: "Horse barding", tier: 7, requires: ["mail", "horse_riding"], unlocks: [
+        (id: "horse_armour", name: "Horse armour", kind: Armour, cost: [("iron", 8), ("leather", 4)], work: 14, effects: [Armor(4)], look: "barding"),
+        (id: "cataphract", name: "Cataphract", kind: Job, effects: [Attack(6), Armor(6), Speed(0.3)], look: "cataphract"),
+    ]),
+    (id: "steel_helmets", name: "Steel helmets", tier: 9, requires: ["blast_furnace", "firearms"], unlocks: [
+        (id: "steel_helmet", name: "Steel helmet", kind: Armour, cost: [("steel", 1)], work: 1, effects: [Armor(2)], look: "steel_helmet"),
+        (id: "breastplate", name: "Bullet-proof breastplate", kind: Armour, cost: [("steel", 4)], work: 3, effects: [Armor(5)], look: "breastplate"),
+    ]),
+])

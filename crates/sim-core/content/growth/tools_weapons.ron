@@ -1,0 +1,136 @@
+// Tools, weapons and ranged defenses: knapped stone to electric turrets.
+// Tower buildings live with the weapon they mount.
+(domain: ToolsWeapons, nodes: [
+    (id: "knapping", name: "Stone knapping", tier: 0, starting: true, era: "stone-using", unlocks: [
+        (id: "hand_axe", name: "Hand axe", kind: Tool, cost: [("stone", 1)], work: 1, effects: [Speed(0.1)], look: "hand_axe",
+         variants: [
+            (when: [Biome(Swamp), Biome(Rainforest)], name: "Shell scraper", look: "shell_scraper", cost: [("bone", 1)]),
+            (when: [Biome(Ice), Biome(Tundra)], name: "Bone chopper", look: "bone_chopper", cost: [("bone", 1)]),
+         ]),
+        (id: "stone_knife", name: "Stone knife", kind: Weapon, cost: [("stone", 1)], work: 1, effects: [Attack(1)], look: "stone_knife"),
+        (id: "club", name: "Club", kind: Weapon, cost: [("wood", 1)], work: 1, effects: [Attack(1.5)], look: "club",
+         variants: [(when: [Biome(Tundra), Biome(Ice)], name: "Antler club", look: "antler_club", cost: [("bone", 2)])]),
+        (id: "throwing_stones", name: "Throwing stones", kind: Weapon, work: 0, effects: [Attack(0.5), Range(4)], look: "stones"),
+    ]),
+    (id: "obsidian_blades", name: "Obsidian blades", tier: 1, requires: ["knapping"], local: [Mountain], needs: ["obsidian"], unlocks: [
+        (id: "obsidian_knife", name: "Obsidian knife", kind: Weapon, cost: [("obsidian", 1)], work: 1, effects: [Attack(2)], look: "obsidian_knife"),
+        (id: "obsidian_club", name: "Obsidian-edged club", kind: Weapon, cost: [("wood", 2), ("obsidian", 2)], work: 3, effects: [Attack(4)], look: "macuahuitl"),
+    ]),
+    (id: "spears", name: "Spears", tier: 1, requires: ["knapping"], spurs: [Monsters, Raided], unlocks: [
+        (id: "wooden_spear", name: "Fire-hardened spear", kind: Weapon, cost: [("wood", 2)], work: 1, effects: [Attack(2), Range(1.5)], look: "spear",
+         variants: [
+            (when: [Biome(Rainforest), Biome(Swamp)], name: "Bamboo spear", look: "bamboo_spear"),
+            (when: [Biome(Tundra), Biome(Ice)], name: "Bone harpoon", look: "harpoon", cost: [("bone", 2)]),
+         ]),
+        (id: "spear_thrower", name: "Spear thrower", kind: Weapon, cost: [("wood", 1)], work: 2, effects: [Attack(2), Range(6)], look: "atlatl"),
+    ]),
+    (id: "traps", name: "Traps", tier: 2, requires: ["cordage"], spurs: [Monsters, Raided, Famine], unlocks: [
+        (id: "pit_trap", name: "Pit trap", kind: Building, work: 6, footprint: (1, 1), effects: [Defense(0.2), Attack(2)], look: "pit_trap",
+         variants: [(when: [Biome(Ice), Biome(Snowcap)], name: "Snow pit", look: "snow_pit")]),
+        (id: "snare", name: "Snare", kind: Tool, cost: [("rope", 1)], work: 1, effects: [FoodYield(0.1)], look: "snare"),
+        (id: "spike_trap", name: "Spike trap", kind: Building, cost: [("wood", 3)], work: 4, footprint: (1, 1), effects: [Defense(0.3), Attack(3)], look: "spike_trap",
+         variants: [(when: [Biome(Rainforest), Biome(Swamp)], name: "Punji pit", look: "punji")]),
+        (id: "deadfall", name: "Deadfall", kind: Building, cost: [("stone", 4), ("rope", 1)], work: 4, footprint: (1, 1), effects: [Attack(4)], look: "deadfall"),
+        (id: "trapper", name: "Trapper", kind: Job, produces: [("fur", 1)], conditions: [Resource("game"), Place([Biome(Taiga), Biome(Tundra), Biome(Snowcap), Biome(Alpine)])],
+         effects: [FoodYield(0.05)], look: "trapper"),
+    ]),
+    (id: "slings", name: "Slings", tier: 2, requires: ["cordage"], unlocks: [
+        (id: "sling", name: "Sling", kind: Weapon, cost: [("rope", 1)], work: 1, effects: [Attack(1.5), Range(8)], look: "sling"),
+        (id: "sling_platform", name: "Sling platform", kind: Building, cost: [("wood", 8), ("stone", 6)], work: 6, footprint: (1, 1),
+         effects: [Defense(0.2), Range(8), Attack(1)], look: "sling_platform"),
+    ]),
+    (id: "bows", name: "Bows", tier: 2, requires: ["spears", "cordage"], effort: 1.5, spurs: [War, Raided], unlocks: [
+        (id: "self_bow", name: "Self bow", kind: Weapon, cost: [("wood", 2), ("rope", 1)], work: 2, effects: [Attack(2), Range(9)], look: "bow",
+         variants: [
+            (when: [Biome(Rainforest)], name: "Palmwood bow", look: "palm_bow"),
+            (when: [Biome(Tundra), Biome(Ice)], name: "Sinew-backed bow", look: "sinew_bow", cost: [("bone", 2), ("rope", 1)]),
+         ]),
+        (id: "archer", name: "Archer", kind: Job, effects: [Attack(2), Range(9)], look: "archer"),
+        (id: "archer_post", name: "Archer post", kind: Building, cost: [("wood", 10)], work: 6, footprint: (1, 1),
+         effects: [Defense(0.3), Range(9), Attack(2)], look: "archer_post"),
+    ]),
+    (id: "blowguns", name: "Blowguns and poison", tier: 2, requires: ["spears"], local: [Biome(Rainforest), Biome(Swamp)], spurs: [Monsters, Raided], unlocks: [
+        (id: "blowgun", name: "Blowgun", kind: Weapon, cost: [("wood", 1)], work: 2, effects: [Attack(2.5), Range(7)], look: "blowgun"),
+        (id: "poison_darts", name: "Poison darts", kind: Weapon, cost: [("herbs", 1)], work: 1, effects: [Attack(2)], look: "darts"),
+    ]),
+    (id: "copper_tools", name: "Copper tools", tier: 4, requires: ["copper_smelting"], unlocks: [
+        (id: "copper_axe", name: "Copper axe", kind: Tool, cost: [("copper", 2), ("wood", 1)], work: 2, effects: [Speed(0.25)], look: "copper_axe"),
+        (id: "copper_dagger", name: "Copper dagger", kind: Weapon, cost: [("copper", 1)], work: 2, effects: [Attack(3)], look: "copper_dagger"),
+        (id: "copper_pick", name: "Copper pick", kind: Tool, cost: [("copper", 2), ("wood", 1)], work: 2, effects: [Speed(0.25)], look: "copper_pick"),
+    ]),
+    (id: "composite_bows", name: "Composite bows", tier: 5, requires: ["bows", "hide_working"], local: [Biome(ColdSteppe), Biome(Grassland), Biome(Desert)],
+     effort: 1.5, spurs: [War], unlocks: [
+        (id: "composite_bow", name: "Composite bow", kind: Weapon, cost: [("wood", 2), ("bone", 2), ("leather", 1)], work: 5,
+         effects: [Attack(3), Range(12)], look: "composite_bow"),
+        (id: "horse_archer", name: "Horse archer", kind: Job, conditions: [Node("horse_riding")], effects: [Attack(3), Range(12), Speed(0.5)], look: "horse_archer"),
+    ]),
+    (id: "bronze_weapons", name: "Bronze weapons", tier: 5, requires: ["bronze_alloying"], unlocks: [
+        (id: "bronze_sword", name: "Bronze sword", kind: Weapon, cost: [("bronze", 3), ("wood", 1)], work: 4, effects: [Attack(5)], look: "bronze_sword",
+         variants: [
+            (when: [Biome(Desert), Biome(Savanna)], name: "Sickle sword", look: "khopesh"),
+            (lean: Confrontation, name: "Leaf-bladed war sword", look: "leaf_sword"),
+         ]),
+        (id: "bronze_spear", name: "Bronze-tipped spear", kind: Weapon, cost: [("bronze", 1), ("wood", 2)], work: 3, effects: [Attack(4), Range(2)], look: "bronze_spear"),
+        (id: "bronze_axe", name: "Bronze battle axe", kind: Weapon, cost: [("bronze", 2), ("wood", 1)], work: 3, effects: [Attack(4.5)], look: "bronze_axe"),
+    ]),
+    (id: "crossbows", name: "Crossbows", tier: 6, requires: ["bows", "bronze_weapons"], effort: 1.5, spurs: [Siege, Raided], unlocks: [
+        (id: "crossbow", name: "Crossbow", kind: Weapon, cost: [("wood", 2), ("bronze", 1), ("rope", 1)], work: 5, effects: [Attack(4), Range(12)], look: "crossbow"),
+        (id: "crossbow_tower", name: "Crossbow tower", kind: Building, cost: [("wood", 20), ("stone", 20), ("bronze", 4)], work: 20, footprint: (2, 2),
+         effects: [Defense(0.6), Range(12), Attack(4), Vision(12)], look: "crossbow_tower",
+         variants: [
+            (when: [Biome(Desert), Biome(Savanna)], name: "Mud-brick crossbow tower", look: "mud_crossbow_tower", cost: [("brick", 30), ("bronze", 4)]),
+            (when: [Biome(Rainforest), Biome(Swamp)], name: "Stilt crossbow tower", look: "stilt_crossbow_tower", cost: [("wood", 36), ("bronze", 4)]),
+         ]),
+    ]),
+    (id: "iron_weapons", name: "Iron weapons", tier: 6, requires: ["iron_smelting"], spurs: [War], unlocks: [
+        (id: "iron_sword", name: "Iron sword", kind: Weapon, cost: [("iron", 3), ("wood", 1)], work: 5, effects: [Attack(6)], look: "iron_sword",
+         variants: [
+            (when: [Biome(ColdSteppe), Biome(Grassland)], name: "Cavalry sabre", look: "sabre"),
+            (when: [Biome(Taiga), Biome(TemperateForest)], name: "Pattern-welded sword", look: "pattern_sword"),
+         ]),
+        (id: "iron_spear", name: "Iron spear", kind: Weapon, cost: [("iron", 1), ("wood", 2)], work: 3, effects: [Attack(5), Range(2)], look: "iron_spear"),
+        (id: "iron_tools", name: "Iron tools", kind: Tool, cost: [("iron", 2), ("wood", 1)], work: 3, effects: [Speed(0.35)], look: "iron_tools"),
+    ]),
+    (id: "siege_engines", name: "Siege engines", tier: 6, requires: ["carpentry", "masonry", "cordage"], effort: 1.5, spurs: [Siege, War], unlocks: [
+        (id: "battering_ram", name: "Battering ram", kind: Vessel, cost: [("wood", 30), ("rope", 6)], work: 20, effects: [Attack(12)], look: "ram"),
+        (id: "catapult", name: "Catapult", kind: Vessel, cost: [("wood", 30), ("rope", 10)], work: 25, effects: [Attack(10), Range(18)], look: "catapult"),
+        (id: "ballista_tower", name: "Ballista tower", kind: Building, cost: [("wood", 30), ("stone", 30), ("rope", 10)], work: 30, footprint: (2, 2),
+         effects: [Defense(0.8), Range(16), Attack(7)], look: "ballista_tower"),
+    ]),
+    (id: "steel_weapons", name: "Steel weapons", tier: 7, requires: ["steelmaking"], unlocks: [
+        (id: "steel_sword", name: "Steel sword", kind: Weapon, cost: [("steel", 2), ("wood", 1)], work: 6, effects: [Attack(8)], look: "steel_sword",
+         variants: [
+            (lean: Construction, name: "Folded-steel blade", look: "folded_blade"),
+            (when: [Biome(Desert)], name: "Watered-steel scimitar", look: "scimitar"),
+         ]),
+        (id: "pike", name: "Pike", kind: Weapon, cost: [("steel", 1), ("wood", 3)], work: 4, effects: [Attack(6), Range(3), Defense(0.2)], look: "pike"),
+        (id: "halberd", name: "Halberd", kind: Weapon, cost: [("steel", 2), ("wood", 2)], work: 5, effects: [Attack(7), Range(2)], look: "halberd"),
+    ]),
+    (id: "firearms", name: "Firearms", tier: 8, requires: ["gunpowder", "steelmaking"], effort: 2.0, spurs: [War, Siege], unlocks: [
+        (id: "arquebus", name: "Arquebus", kind: Weapon, cost: [("steel", 2), ("wood", 2)], work: 8, conditions: [Resource("gunpowder")],
+         effects: [Attack(9), Range(14)], look: "arquebus"),
+        (id: "cannon", name: "Cannon", kind: Vessel, cost: [("bronze", 20), ("wood", 10)], work: 30, conditions: [Resource("gunpowder")],
+         effects: [Attack(16), Range(22)], look: "cannon"),
+        (id: "cannon_tower", name: "Cannon tower", kind: Building, cost: [("stone", 60), ("bronze", 20), ("wood", 10)], work: 50, footprint: (2, 2),
+         conditions: [Resource("gunpowder")], effects: [Defense(1.2), Range(22), Attack(14)], look: "cannon_tower"),
+        (id: "musketeer", name: "Musketeer", kind: Job, effects: [Attack(9), Range(14)], look: "musketeer"),
+    ]),
+    (id: "rifles", name: "Rifles", tier: 9, requires: ["firearms", "steam_power"], unlocks: [
+        (id: "rifle", name: "Rifle", kind: Weapon, cost: [("steel", 2), ("machine_parts", 1), ("wood", 1)], work: 4, conditions: [Resource("gunpowder")],
+         effects: [Attack(12), Range(24)], look: "rifle"),
+        (id: "field_gun", name: "Field gun", kind: Vessel, cost: [("steel", 20), ("machine_parts", 6)], work: 20, conditions: [Resource("gunpowder")],
+         effects: [Attack(20), Range(30)], look: "field_gun"),
+    ]),
+    (id: "artillery_forts", name: "Rifled artillery", tier: 9, requires: ["firearms", "blast_furnace"], spurs: [Siege], unlocks: [
+        (id: "gun_battery", name: "Gun battery", kind: Building, cost: [("concrete", 40), ("steel", 30), ("machine_parts", 6)], work: 60, footprint: (3, 2),
+         conditions: [Resource("gunpowder")], effects: [Defense(1.6), Range(30), Attack(20)], look: "gun_battery"),
+    ]),
+    (id: "electric_weapons", name: "Electric weapons", tier: 10, requires: ["electricity", "rifles"], effort: 2.5, spurs: [War, Monsters], unlocks: [
+        (id: "electric_turret", name: "Electric turret", kind: Building, cost: [("steel", 30), ("wire", 20), ("machine_parts", 10)], work: 50, footprint: (2, 2),
+         consumes: [("electricity", 2)], effects: [Defense(2.0), Range(26), Attack(18)], look: "electric_turret"),
+        (id: "shock_fence", name: "Shock fence", kind: Building, cost: [("steel", 4), ("wire", 6)], work: 4, footprint: (1, 1),
+         consumes: [("electricity", 1)], effects: [Defense(0.8), Attack(6)], look: "shock_fence"),
+        (id: "searchlight_tower", name: "Searchlight tower", kind: Building, cost: [("steel", 12), ("wire", 6), ("glass", 4)], work: 20, footprint: (1, 1),
+         consumes: [("electricity", 1)], effects: [Vision(30), Defense(0.2)], look: "searchlight"),
+    ]),
+])

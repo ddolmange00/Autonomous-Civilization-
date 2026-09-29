@@ -1,0 +1,142 @@
+// Materials and processing: fire to electricity. Processes turn accessible
+// inputs into new resources; that is how a region without an ore can still
+// work its metal once the ore or the metal arrives by trade.
+(domain: Materials, nodes: [
+    (id: "fire", name: "Fire", tier: 0, starting: true, era: "stone-using", unlocks: [
+        (id: "campfire", name: "Campfire", kind: Building, cost: [("wood", 3)], work: 1, footprint: (1, 1),
+         effects: [Morale(0.05), Healing(0.02)], look: "campfire",
+         variants: [
+            (when: [Biome(Tundra), Biome(Ice), Biome(Snowcap)], name: "Peat hearth", look: "peat_hearth", cost: [("peat", 3)]),
+            (when: [Biome(Desert)], name: "Dung fire", look: "dung_fire", cost: []),
+         ]),
+    ]),
+    (id: "cordage", name: "Cordage", tier: 1, requires: ["knapping"], unlocks: [
+        (id: "fibre_rope", name: "Fibre rope", kind: Process, consumes: [("wild_fiber", 3)], produces: [("rope", 1)], work: 1),
+        (id: "reed_rope", name: "Reed rope", kind: Process, consumes: [("reed", 3)], produces: [("rope", 1)], work: 1),
+        (id: "bark_rope", name: "Bark rope", kind: Process, consumes: [("wood", 4)], produces: [("rope", 1)], work: 2),
+        (id: "sinew_cord", name: "Sinew cord", kind: Process, consumes: [("bone", 2), ("hide", 1)], produces: [("rope", 1)], work: 2),
+    ]),
+    (id: "hide_working", name: "Hide working", tier: 1, requires: ["hunting"], needs: ["hide"], spurs: [Cold], unlocks: [
+        (id: "tanning", name: "Tanning", kind: Process, consumes: [("hide", 2)], produces: [("leather", 1)], work: 2),
+        (id: "tanning_rack", name: "Tanning rack", kind: Building, cost: [("wood", 4)], work: 2, footprint: (1, 1),
+         effects: [Speed(0.1)], look: "tanning_rack",
+         variants: [(when: [Biome(Tundra), Biome(Ice)], name: "Bone drying frame", look: "bone_frame", cost: [("bone", 6)])]),
+    ]),
+    (id: "pottery", name: "Pottery", tier: 1, requires: ["fire"], needs: ["clay"], unlocks: [
+        (id: "pit_firing", name: "Pit firing", kind: Process, consumes: [("clay", 2), ("wood", 1)], produces: [("pottery", 2)], work: 2),
+        (id: "kiln", name: "Kiln", kind: Building, cost: [("clay", 10), ("stone", 4)], work: 6, footprint: (1, 1),
+         effects: [Speed(0.2)], look: "kiln",
+         variants: [(when: [Biome(Swamp), Biome(Rainforest), River], name: "Clay dome kiln", look: "dome_kiln", cost: [("clay", 16)])]),
+    ]),
+    (id: "charcoal_burning", name: "Charcoal burning", tier: 2, requires: ["fire"], needs: ["wood"], unlocks: [
+        (id: "charcoal_clamp", name: "Charcoal clamp", kind: Process, consumes: [("wood", 4)], produces: [("charcoal", 2)], work: 3),
+        (id: "peat_charring", name: "Peat charring", kind: Process, consumes: [("peat", 4)], produces: [("charcoal", 1)], work: 3),
+    ]),
+    (id: "weaving", name: "Weaving", tier: 2, requires: ["cordage"], unlocks: [
+        (id: "fibre_cloth", name: "Plant-fibre cloth", kind: Process, consumes: [("wild_fiber", 4)], produces: [("cloth", 1)], work: 3),
+        (id: "wool_cloth", name: "Woollen cloth", kind: Process, consumes: [("wool", 2)], produces: [("cloth", 2)], work: 2),
+        (id: "cotton_cloth", name: "Cotton cloth", kind: Process, consumes: [("cotton", 2)], produces: [("cloth", 2)], work: 2),
+        (id: "bark_cloth", name: "Bark cloth", kind: Process, consumes: [("wood", 3)], produces: [("cloth", 1)], work: 4,
+         conditions: [Place([Biome(Rainforest), Biome(Savanna)])]),
+        (id: "loom", name: "Loom", kind: Building, cost: [("wood", 8), ("rope", 2)], work: 4, footprint: (1, 1),
+         effects: [Speed(0.2)], look: "loom"),
+    ]),
+    (id: "brickmaking", name: "Brickmaking", tier: 2, requires: ["pottery"], unlocks: [
+        (id: "fired_brick", name: "Fired brick", kind: Process, consumes: [("clay", 3), ("wood", 1)], produces: [("brick", 3)], work: 2),
+        (id: "sun_dried_brick", name: "Sun-dried mud brick", kind: Process, consumes: [("clay", 3)], produces: [("brick", 2)], work: 3,
+         conditions: [Place([Biome(Desert), Biome(Savanna), Biome(ColdSteppe)])]),
+    ]),
+    (id: "lime_burning", name: "Lime burning", tier: 2, requires: ["fire"], needs: ["limestone"], unlocks: [
+        (id: "lime_kiln", name: "Lime kiln", kind: Process, consumes: [("limestone", 3), ("wood", 2)], produces: [("lime", 2)], work: 3),
+        (id: "shell_lime", name: "Shell lime", kind: Process, consumes: [("shellfish", 4), ("wood", 1)], produces: [("lime", 1)], work: 3),
+    ]),
+    (id: "tar_making", name: "Tar making", tier: 3, requires: ["charcoal_burning"], local: [Biome(Taiga), Biome(TemperateForest)], unlocks: [
+        (id: "tar_pit", name: "Tar pit", kind: Process, consumes: [("wood", 5)], produces: [("tar", 1)], work: 3),
+    ]),
+    (id: "copper_smelting", name: "Copper smelting", tier: 3, requires: ["pottery", "charcoal_burning"], needs: ["copper_ore"],
+     era: "copper-working", effort: 1.5, unlocks: [
+        (id: "copper_smelt", name: "Copper smelting", kind: Process, consumes: [("copper_ore", 3), ("charcoal", 2)], produces: [("copper", 1)], work: 3,
+         conditions: [Building("smelter")]),
+        (id: "smelter", name: "Smelter", kind: Building, cost: [("clay", 12), ("stone", 8)], work: 8, footprint: (1, 1),
+         effects: [Speed(0.1)], look: "smelter"),
+    ]),
+    (id: "precious_metals", name: "Precious metals", tier: 4, requires: ["copper_smelting"], spurs: [Trade], unlocks: [
+        (id: "gold_refining", name: "Gold refining", kind: Process, consumes: [("gold_ore", 3), ("charcoal", 1)], produces: [("gold", 1)], work: 3),
+        (id: "silver_refining", name: "Silver refining", kind: Process, consumes: [("silver_ore", 3), ("charcoal", 1)], produces: [("silver", 1)], work: 3),
+        (id: "jewellery", name: "Jewellery", kind: Tool, cost: [("gold", 1)], work: 3, effects: [Morale(0.05), Trade(0.1)], look: "jewellery",
+         variants: [(when: [Coast], name: "Pearl jewellery", look: "pearl_jewellery", cost: [("pearls", 2), ("silver", 1)])]),
+    ]),
+    (id: "bronze_alloying", name: "Bronze alloying", tier: 4, requires: ["copper_smelting"], needs: ["copper_ore", "tin_ore"],
+     era: "bronze-casting", effort: 1.5, spurs: [War, Trade], unlocks: [
+        (id: "bronze_alloy", name: "Bronze alloy", kind: Process, consumes: [("copper", 3), ("tin_ore", 1), ("charcoal", 1)], produces: [("bronze", 4)], work: 3,
+         conditions: [Building("foundry")]),
+        (id: "foundry", name: "Foundry", kind: Building, cost: [("brick", 20), ("stone", 10)], work: 14, footprint: (2, 2),
+         effects: [Speed(0.2)], look: "foundry"),
+    ]),
+    (id: "glassmaking", name: "Glassmaking", tier: 4, requires: ["lime_burning", "pottery"], needs: ["sand"], unlocks: [
+        (id: "glass_melt", name: "Glass melting", kind: Process, consumes: [("sand", 3), ("lime", 1), ("charcoal", 1)], produces: [("glass", 2)], work: 3),
+        (id: "glass_beads", name: "Glass beads", kind: Tool, cost: [("glass", 1)], work: 1, effects: [Trade(0.1), Morale(0.02)], look: "beads"),
+    ]),
+    (id: "iron_smelting", name: "Iron smelting", tier: 5, requires: ["copper_smelting"], needs: ["iron_ore"],
+     era: "iron-forging", effort: 2.0, spurs: [War], unlocks: [
+        (id: "bloomery", name: "Bloomery", kind: Building, cost: [("clay", 16), ("stone", 12)], work: 12, footprint: (1, 1),
+         effects: [Speed(0.1)], look: "bloomery"),
+        (id: "iron_bloom", name: "Iron bloom", kind: Process, consumes: [("iron_ore", 3), ("charcoal", 3)], produces: [("iron", 1)], work: 4,
+         conditions: [Building("bloomery")]),
+    ]),
+    (id: "papermaking", name: "Papermaking", tier: 5, requires: ["weaving", "writing"], unlocks: [
+        (id: "papyrus", name: "Papyrus", kind: Process, consumes: [("reed", 4)], produces: [("paper", 2)], work: 2,
+         conditions: [Place([River, Biome(Swamp)])]),
+        (id: "pulp_paper", name: "Pulp paper", kind: Process, consumes: [("wood", 3), ("lime", 1)], produces: [("paper", 2)], work: 3),
+        (id: "rag_paper", name: "Rag paper", kind: Process, consumes: [("cloth", 1)], produces: [("paper", 2)], work: 2),
+    ]),
+    (id: "steelmaking", name: "Steelmaking", tier: 6, requires: ["iron_smelting"], era: "steel-forging", effort: 2.0, spurs: [War, Siege], unlocks: [
+        (id: "crucible_steel", name: "Crucible steel", kind: Process, consumes: [("iron", 2), ("charcoal", 2), ("pottery", 1)], produces: [("steel", 1)], work: 5),
+        (id: "forge", name: "Great forge", kind: Building, cost: [("brick", 30), ("iron", 6)], work: 20, footprint: (2, 2),
+         effects: [Speed(0.3)], look: "great_forge"),
+    ]),
+    (id: "concrete", name: "Concrete", tier: 6, requires: ["lime_burning", "masonry"], needs: ["sand"], unlocks: [
+        (id: "concrete_mix", name: "Concrete mixing", kind: Process, consumes: [("lime", 2), ("sand", 2), ("stone", 2)], produces: [("concrete", 4)], work: 3),
+    ]),
+    (id: "blast_furnace", name: "Coke and the blast furnace", tier: 7, requires: ["steelmaking"], needs: ["coal"], effort: 2.0, unlocks: [
+        (id: "coking", name: "Coking", kind: Process, consumes: [("coal", 3)], produces: [("coke", 2)], work: 2),
+        (id: "blast_furnace_works", name: "Blast furnace", kind: Building, cost: [("brick", 60), ("iron", 20), ("stone", 30)], work: 60, footprint: (2, 3),
+         effects: [Speed(0.5)], look: "blast_furnace"),
+        (id: "pig_iron", name: "Pig iron", kind: Process, consumes: [("iron_ore", 3), ("coke", 2), ("lime", 1)], produces: [("iron", 3)], work: 2,
+         conditions: [Building("blast_furnace_works")]),
+        (id: "bulk_steel", name: "Bulk steel", kind: Process, consumes: [("iron", 3), ("coke", 1)], produces: [("steel", 2)], work: 2,
+         conditions: [Building("blast_furnace_works")]),
+    ]),
+    (id: "gunpowder", name: "Gunpowder", tier: 7, requires: ["charcoal_burning", "alchemy"], needs: ["saltpeter", "sulfur"],
+     era: "gunpowder", effort: 2.0, spurs: [War, Siege], unlocks: [
+        (id: "powder_mill", name: "Powder mill", kind: Building, cost: [("wood", 30), ("stone", 20)], work: 20, footprint: (2, 2),
+         effects: [Speed(0.2)], look: "powder_mill"),
+        (id: "black_powder", name: "Black powder", kind: Process, consumes: [("saltpeter", 3), ("sulfur", 1), ("charcoal", 1)], produces: [("gunpowder", 3)], work: 2,
+         conditions: [Building("powder_mill")]),
+        (id: "fireworks", name: "Fireworks", kind: Tool, cost: [("gunpowder", 1), ("paper", 1)], work: 1, effects: [Morale(0.15)], look: "fireworks"),
+    ]),
+    (id: "steam_power", name: "Steam power", tier: 8, requires: ["blast_furnace"], needs: ["coal"], era: "steam", effort: 2.5, unlocks: [
+        (id: "steam_engine", name: "Steam engine", kind: Building, cost: [("iron", 30), ("steel", 10), ("brick", 20)], work: 40, footprint: (2, 2),
+         consumes: [("coal", 2)], effects: [Speed(0.5)], look: "steam_engine"),
+        (id: "machine_shop", name: "Machine shop", kind: Building, cost: [("steel", 20), ("brick", 30)], work: 40, footprint: (2, 3),
+         conditions: [Building("steam_engine")], effects: [Speed(0.3)], look: "machine_shop"),
+        (id: "machining", name: "Machining", kind: Process, consumes: [("steel", 2), ("coal", 1)], produces: [("machine_parts", 2)], work: 3,
+         conditions: [Building("machine_shop")]),
+    ]),
+    (id: "vulcanisation", name: "Vulcanised rubber", tier: 9, requires: ["steam_power"], needs: ["latex", "sulfur"], unlocks: [
+        (id: "rubber_curing", name: "Rubber curing", kind: Process, consumes: [("latex", 2), ("sulfur", 1)], produces: [("rubber", 2)], work: 2),
+    ]),
+    (id: "oil_refining", name: "Oil refining", tier: 9, requires: ["steam_power"], needs: ["crude_oil"], unlocks: [
+        (id: "refinery", name: "Refinery", kind: Building, cost: [("steel", 40), ("machine_parts", 10), ("brick", 30)], work: 60, footprint: (3, 3),
+         look: "refinery"),
+        (id: "distil_oil", name: "Oil distillation", kind: Process, consumes: [("crude_oil", 3)], produces: [("fuel", 2)], work: 2,
+         conditions: [Building("refinery")]),
+    ]),
+    (id: "electricity", name: "Electricity", tier: 9, requires: ["steam_power", "copper_smelting"], era: "electric", effort: 3.0, unlocks: [
+        (id: "wire_drawing", name: "Wire drawing", kind: Process, consumes: [("copper", 2)], produces: [("wire", 3)], work: 2),
+        (id: "generator", name: "Coal generator", kind: Building, cost: [("steel", 30), ("wire", 20), ("machine_parts", 10)], work: 50, footprint: (2, 2),
+         consumes: [("coal", 2)], produces: [("electricity", 4)], look: "generator"),
+        (id: "water_turbine", name: "Water turbine", kind: Building, cost: [("steel", 20), ("wire", 20), ("concrete", 30)], work: 60, footprint: (2, 2),
+         conditions: [Place([River])], produces: [("electricity", 3)], look: "water_turbine"),
+    ]),
+])

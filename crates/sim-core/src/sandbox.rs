@@ -39,7 +39,11 @@ use crate::{
     civilization::Civilization,
     lod::Cohort,
     history::{compact, EraSummary},
+    terrain::{hazards::Hazards, Biome, Ground, TerrainBrush, TileMap, CHUNK, TILE_SIZE},
+    spatial::PointGrid,
 };
+use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct ActionScore { pub action: ActionPrimitive, pub score: f32 }
@@ -77,10 +81,36 @@ pub struct Sandbox {
     pub ground_truth:GroundTruthRegistry, pub draft_count:u64,
     pub civilizations:Vec<Civilization>, pub cohorts:Vec<Cohort>, pub eras:Vec<EraSummary>,
     pub last_cohort_year:f64,
+    /// Objective tile world, when the sandbox stands on a generated map.
+    pub terrain:Option<Arc<TileMap>>,
+    /// Reference point the founding layout and default spawns are relative to.
+    pub anchor:Position,
+    /// Terrain chunks whose features exist in `features` (empty without terrain).
+    feature_chunks:Vec<bool>,
+    preset:Preset,
+    /// Tile fire and surface water (tile worlds only). On a tile world these,
+    /// not the fire/flood event discs, cause physical damage.
+    pub hazards:Option<Hazards>,
+    /// Walking pace multiplier. The abstract sandbox keeps 1.0; a tile world
+    /// uses a human pace so people visibly travel between chores.
+    pub move_scale:f32,
+    /// Growth-tree state per tribe (discoveries, eras), advanced by `growth::runtime`.
+    pub growth:crate::growth::runtime::GrowthWorld,
 }
+
+/// What one resident can observe about another at the start of a step.
+#[derive(Clone,Copy)]
+struct Peer { id:u64, position:Position, health:f32, stage:LifeStage, hunger:f32, safety:f32 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Preset { Default, Arid, Rich }
+
+impl Preset {
+    /// (vegetation regeneration, food value) multipliers.
+    fn multipliers(self)->(f32,f32) {
+        match self { Preset::Default=>(1.0,1.0), Preset::Arid=>(0.3,0.7), Preset::Rich=>(1.5,1.2) }
+    }
+}
 
 fn unit(seed:u64, stream:u64)->f32 {
     let mut x=seed ^ stream.wrapping_mul(0x9E3779B97F4A7C15);
@@ -91,35 +121,138 @@ fn unit(seed:u64, stream:u64)->f32 {
 }
 fn signed(seed:u64,stream:u64)->f32 { unit(seed,stream)*2.0-1.0 }
 fn dist(a:Position,b:Position)->f32 { ((a.x-b.x).powi(2)+(a.y-b.y).powi(2)).sqrt() }
-fn blocked(pos:Position,features:&[SandboxFeature])->bool {
-    features.iter().any(|f|{
-        let r=match f.kind {FeatureKind::DeepWater=>17.0,FeatureKind::RockFace=>7.0,_=>return false};
+/// What physically stops a traveller: feature barriers, and on a tile world the
+/// terrain itself (open water, summit rock, the map edge). A vessel crosses
+/// water but still cannot cross summits or leave the map.
+#[derive(Clone,Copy)]
+struct Walk<'a> { features:&'a [SandboxFeature], terrain:Option<&'a TileMap>, hazards:Option<&'a Hazards>, sail:bool }
+impl<'a> Walk<'a> {
+    fn on_foot(features:&'a [SandboxFeature],terrain:Option<&'a TileMap>,hazards:Option<&'a Hazards>)->Self { Self{features,terrain,hazards,sail:false} }
+    fn by_craft(terrain:Option<&'a TileMap>)->Self { Self{features:&[],terrain,hazards:None,sail:true} }
+}
+fn blocked(from:Position,pos:Position,walk:Walk)->bool {
+    if let Some(t)=walk.terrain {
+        let passable=if walk.sail {
+            t.ground_at(pos).map(|g|g!=Ground::Peak).unwrap_or(false)
+        } else { t.walkable_at(pos) };
+        if !passable{return true;}
+        // Nobody walks into a blaze or deep floodwater, but anyone caught in one
+        // can always move to ground that is no worse than where they stand.
+        if let (Some(h),Some((x,y)))=(walk.hazards,t.tile_at(pos)) {
+            let to=t.index(x,y);
+            if h.blocks(to) {
+                let escaping=t.tile_at(from).map(|(fx,fy)|{
+                    let here=t.index(fx,fy);
+                    h.water[to]<=h.water[here]&&h.fire[to]<=h.fire[here]
+                }).unwrap_or(false);
+                if !escaping{return true;}
+            }
+        }
+    }
+    walk.features.iter().any(|f|{
+        let r=match f.kind {
+            // Tile water already blocks; coastal water features exist for perception only.
+            FeatureKind::DeepWater if walk.terrain.is_some()=>return false,
+            FeatureKind::DeepWater=>17.0,FeatureKind::RockFace=>7.0,_=>return false};
         dist(pos,f.position)<r
     })
 }
-fn try_move(p:&mut Position,dx:f32,dy:f32,amount:f32,features:&[SandboxFeature]) {
+fn try_move(p:&mut Position,dx:f32,dy:f32,amount:f32,walk:Walk) {
     let d=(dx*dx+dy*dy).sqrt(); if d<=0.001{return;}
     let s=amount.min(d)/d; let direct=Position{x:p.x+dx*s,y:p.y+dy*s};
-    if !blocked(direct,features){*p=direct;return;}
+    if !blocked(*p,direct,walk){*p=direct;return;}
     let left=Position{x:p.x-dy/d*amount,y:p.y+dx/d*amount};
     let right=Position{x:p.x+dy/d*amount,y:p.y-dx/d*amount};
-    if !blocked(left,features){*p=left;} else if !blocked(right,features){*p=right;}
+    if !blocked(*p,left,walk){*p=left;} else if !blocked(*p,right,walk){*p=right;}
 }
-fn move_toward(p:&mut Position,target:Position,amount:f32,features:&[SandboxFeature]) {
-    try_move(p,target.x-p.x,target.y-p.y,amount,features);
+fn move_toward(p:&mut Position,target:Position,amount:f32,walk:Walk) {
+    try_move(p,target.x-p.x,target.y-p.y,amount,walk);
 }
-fn move_away(p:&mut Position,target:Position,amount:f32,features:&[SandboxFeature]) {
-    try_move(p,p.x-target.x,p.y-target.y,amount,features);
+fn move_away(p:&mut Position,target:Position,amount:f32,walk:Walk) {
+    try_move(p,p.x-target.x,p.y-target.y,amount,walk);
+}
+/// Undirected drift. Without terrain this is the original free drift.
+fn wander(p:&mut Position,dx:f32,dy:f32,terrain:Option<&TileMap>) {
+    let next=Position{x:p.x+dx,y:p.y+dy};
+    if terrain.map(|t|t.walkable_at(next)).unwrap_or(true){*p=next;}
+}
+
+/// Resident id -> index of the first settlement listing them (same answer as a
+/// front-to-back `find` over settlements).
+fn settlement_of(settlements:&[SettlementIdentity])->HashMap<u64,usize> {
+    let mut m=HashMap::new();
+    for (i,s) in settlements.iter().enumerate() { for id in &s.members { m.entry(*id).or_insert(i); } }
+    m
+}
+/// Household id -> indices of its living residents, in resident order.
+fn alive_by_household(residents:&[Resident])->HashMap<u64,Vec<usize>> {
+    let mut m:HashMap<u64,Vec<usize>>=HashMap::new();
+    for (i,r) in residents.iter().enumerate() {
+        if r.health>0.0 { if let Some(h)=r.life.kinship.household { m.entry(h).or_default().push(i); } }
+    }
+    m
+}
+
+/// Walking pace on a tile world relative to the abstract sandbox.
+const TERRAIN_PACE:f32=6.0;
+
+/// Perceived burning tiles use ids above this, so decisions can target a fire's location.
+const FIRE_TARGET_BASE:u64=1<<62;
+
+/// Founding band layout centre in the default sandbox.
+const DEFAULT_BAND_CENTER:Position=Position{x:-120.0,y:0.0};
+/// Chunks within this many chunks of a living resident have their features materialised.
+const ACTIVATION_RADIUS_CHUNKS:i32=1;
+
+/// Perceivable features of one terrain chunk, sampled deterministically from its tiles.
+fn chunk_features(seed:u64,preset:Preset,t:&TileMap,cx:usize,cy:usize,id:&mut u64)->Vec<SandboxFeature> {
+    let (regen_mult,food_mult)=preset.multipliers();
+    let mut out=Vec::new();
+    let mut coast_cells=std::collections::BTreeSet::new();
+    let (x0,y0)=(cx*CHUNK,cy*CHUNK);
+    for y in y0..(y0+CHUNK).min(t.height) { for x in x0..(x0+CHUNK).min(t.width) {
+        let i=t.index(x,y); let g=t.ground[i]; let b=t.biome[i];
+        let pos=t.tile_center(x,y);
+        let roll=t.tile_roll(i,seed^0x5EED_F00D);
+        let u=|k:u64|t.tile_roll(i,seed^k);
+        if g.is_water() {
+            // One perceivable water-body marker per 8x8 block of shoreline water.
+            let shore=[(0i32,-1i32),(-1,0),(1,0),(0,1)].iter().any(|(ox,oy)|{
+                let (nx,ny)=(x as i32+ox,y as i32+oy);
+                nx>=0&&ny>=0&&(nx as usize)<t.width&&(ny as usize)<t.height&&t.ground[t.index(nx as usize,ny as usize)].walkable()
+            });
+            if shore&&coast_cells.insert((x/8,y/8)) {
+                out.push(SandboxFeature{id:*id,kind:FeatureKind::DeepWater,position:pos,danger:0.65,food:0.0,material:0.0,quantity:1.0,capacity:1.0,regeneration_per_day:0.0}); *id+=1;
+            }
+            continue;
+        }
+        if matches!(g,Ground::Mountain|Ground::Peak) {
+            if roll<1.0/60.0 {
+                out.push(SandboxFeature{id:*id,kind:FeatureKind::RockFace,position:pos,danger:0.08,food:0.0,material:0.8,quantity:120.0,capacity:120.0,regeneration_per_day:0.0}); *id+=1;
+            }
+            continue;
+        }
+        let loose_p=match g {Ground::Hills=>1.0/250.0,Ground::Beach=>1.0/600.0,Ground::Lowland=>1.0/1500.0,_=>0.0};
+        if roll<loose_p {
+            let capacity=10.0+u(0x10)*28.0;
+            out.push(SandboxFeature{id:*id,kind:FeatureKind::LooseMaterial,position:pos,danger:0.01,food:0.0,material:0.55+u(0x11)*0.40,quantity:capacity,capacity,regeneration_per_day:0.0}); *id+=1;
+            continue;
+        }
+        if roll<loose_p+b.vegetation_density() {
+            let prod=b.productivity();
+            let capacity=(18.0+u(0x20)*26.0)*prod.max(0.3);
+            out.push(SandboxFeature{id:*id,kind:FeatureKind::Vegetation,position:pos,danger:if b==Biome::Swamp{0.06}else{0.02},
+                food:((0.35+u(0x21)*0.45)*food_mult*prod.min(1.2)).min(1.0),material:0.9,
+                quantity:capacity*(0.55+u(0x22)*0.40),capacity,regeneration_per_day:(0.05+u(0x23)*0.07)*regen_mult*prod}); *id+=1;
+        }
+    }}
+    out
 }
 
 impl Sandbox {
     pub fn new(seed:u64)->Self { Self::with_preset(seed,Preset::Default) }
     pub fn with_preset(seed:u64,preset:Preset)->Self {
-        let (regen_mult,food_mult)=match preset {
-            Preset::Default=>(1.0,1.0),
-            Preset::Arid=>(0.3,0.7),
-            Preset::Rich=>(1.5,1.2),
-        };
+        let (regen_mult,food_mult)=preset.multipliers();
         let mut residents=Vec::new();
         for i in 0..36u64 {
             let mind=AgentMind{
@@ -166,7 +299,54 @@ impl Sandbox {
         Self{seed,year:0.0,residents,animals:vec![],monsters:vec![],features,households:vec![],settlements:vec![],projects:vec![],structures:vec![],events:vec![],causal_log:CausalLog{nodes:vec![],capacity:2048,total_written:0},next_id:id,
             contacts:vec![],institutions:vec![],narratives:vec![],trades:vec![],trade_count:0,theft_count:0,
             warbands:vec![],battles:0,monsters_repelled:0,ground_truth:canonical_registry(),draft_count:0,
-            civilizations:vec![],cohorts:vec![],eras:vec![],last_cohort_year:-1.0}
+            civilizations:vec![],cohorts:vec![],eras:vec![],last_cohort_year:-1.0,
+            terrain:None,anchor:Position{x:0.0,y:0.0},feature_chunks:vec![],preset,hazards:None,move_scale:1.0,growth:Default::default()}
+    }
+
+    /// Found the same band on a generated tile world: the start site is the most
+    /// habitable ground, and every perceivable feature is sampled from real tiles.
+    pub fn on_terrain(seed:u64,preset:Preset,terrain:TileMap)->Self {
+        let mut s=Self::with_preset(seed,preset);
+        let site=terrain.start_site();
+        let center=terrain.tile_center(site.0,site.1);
+        for r in &mut s.residents {
+            let p=Position{x:center.x+(r.position.x-DEFAULT_BAND_CENTER.x),y:center.y+(r.position.y-DEFAULT_BAND_CENTER.y)};
+            r.position=terrain.nearest_walkable(p,48).unwrap_or(center);
+        }
+        s.features.clear();
+        s.next_id=10_000;
+        s.feature_chunks=vec![false;terrain.chunks_x()*terrain.chunks_y()];
+        s.anchor=Position{x:center.x-DEFAULT_BAND_CENTER.x,y:center.y-DEFAULT_BAND_CENTER.y};
+        s.hazards=Some(Hazards::new(&terrain,seed));
+        s.move_scale=TERRAIN_PACE;
+        s.terrain=Some(Arc::new(terrain));
+        s.activate_terrain_chunks();
+        s
+    }
+
+    /// Materialise features for terrain chunks newly within reach of any living
+    /// resident. The world is fully objective; this only decides what is simulated
+    /// in detail, so explored land fills in as people spread.
+    fn activate_terrain_chunks(&mut self) {
+        let Some(t)=self.terrain.clone() else{return;};
+        let (cw,ch)=(t.chunks_x() as i32,t.chunks_y() as i32);
+        let mut fresh=Vec::new();
+        for r in self.residents.iter().filter(|r|r.health>0.0) {
+            let Some((x,y))=t.tile_at(r.position) else{continue;};
+            let (cx,cy)=((x/CHUNK) as i32,(y/CHUNK) as i32);
+            for dy in -ACTIVATION_RADIUS_CHUNKS..=ACTIVATION_RADIUS_CHUNKS { for dx in -ACTIVATION_RADIUS_CHUNKS..=ACTIVATION_RADIUS_CHUNKS {
+                let (nx,ny)=(cx+dx,cy+dy);
+                if nx<0||ny<0||nx>=cw||ny>=ch{continue;}
+                let i=(ny*cw+nx) as usize;
+                if !self.feature_chunks[i]{self.feature_chunks[i]=true;fresh.push((nx as usize,ny as usize));}
+            }}
+        }
+        for (cx,cy) in fresh {
+            let mut id=self.next_id;
+            let found=chunk_features(self.seed,self.preset,&t,cx,cy,&mut id);
+            self.next_id=id;
+            self.features.extend(found);
+        }
     }
 
     pub fn spawn_resident_at(&mut self, position:Position) {
@@ -200,12 +380,14 @@ impl Sandbox {
         }
     }
     pub fn raise_rock_at(&mut self, position:Position, radius:f32) {
+        if let Some(t)=self.terrain.as_mut(){Arc::make_mut(t).paint(position,radius*0.35,TerrainBrush::Rock);}
         let id=self.next_id;self.next_id+=1;
         self.features.push(SandboxFeature{id,kind:FeatureKind::RockFace,position,
             danger:0.08,food:0.0,material:0.8,quantity:120.0,capacity:120.0,regeneration_per_day:0.0});
         self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:id,label:format!("god raised rock (r={radius:.0})")});
     }
     pub fn dig_water_at(&mut self, position:Position, radius:f32) {
+        if let Some(t)=self.terrain.as_mut(){Arc::make_mut(t).paint(position,radius*0.35,TerrainBrush::Water);}
         let id=self.next_id;self.next_id+=1;
         self.features.push(SandboxFeature{id,kind:FeatureKind::DeepWater,position,
             danger:0.65,food:0.0,material:0.0,quantity:1.0,capacity:1.0,regeneration_per_day:0.0});
@@ -222,6 +404,25 @@ impl Sandbox {
         }
     }
 
+    /// Set the ground alight (tile worlds). Returns tiles lit.
+    pub fn ignite_at(&mut self, position:Position, radius:f32, intensity:f32)->usize {
+        let (Some(t),Some(h))=(self.terrain.clone(),self.hazards.as_mut()) else{return 0;};
+        let lit=h.ignite(&t,position,radius,intensity);
+        self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:0,label:format!("fire set ({lit} tiles)")});
+        lit
+    }
+    /// Pour floodwater onto the land (tile worlds).
+    pub fn flood_at(&mut self, position:Position, radius:f32, intensity:f32) {
+        let (Some(t),Some(h))=(self.terrain.clone(),self.hazards.as_mut()) else{return;};
+        h.add_water(&t,position,radius,0.6+intensity*2.0);
+        self.causal_log.push(self.year,CausalNode::WorldEvent{event_id:0,label:"floodwater released".into()});
+    }
+    /// Rain that douses fire and wets the ground (tile worlds).
+    pub fn rain_at(&mut self, position:Position, radius:f32, intensity:f32) {
+        let (Some(t),Some(h))=(self.terrain.clone(),self.hazards.as_mut()) else{return;};
+        h.rain(&t,position,radius,intensity.clamp(0.0,1.0));
+    }
+
     pub fn inject_event(&mut self, kind:WorldEventKind, position:Position, radius:f32, intensity:f32, duration_days:f32)->u64 {
         let id=self.next_id; self.next_id+=1;
         let event=WorldEvent{id,kind,position,radius:radius.max(1.0),intensity:intensity.max(0.0),start_year:self.year,duration_years:duration_days.max(0.1) as f64/365.0};
@@ -232,7 +433,9 @@ impl Sandbox {
 
     pub fn spawn_monster(&mut self) {
         let n=self.monsters.len() as u64;
-        self.spawn_monster_at(Position{x:130.0+signed(self.seed,3000+n)*80.0,y:signed(self.seed,3200+n)*140.0});
+        let mut p=Position{x:self.anchor.x+130.0+signed(self.seed,3000+n)*80.0,y:self.anchor.y+signed(self.seed,3200+n)*140.0};
+        if let Some(t)=&self.terrain {p=t.nearest_walkable(p,64).unwrap_or(p);}
+        self.spawn_monster_at(p);
     }
     pub fn spawn_monster_at(&mut self, position:Position) {
         let n=self.monsters.len() as u64; let mut archetype=MonsterArchetype::default(); archetype.aggression=0.55+unit(self.seed,3400+n)*0.4; self.spawn_monster_with(position,archetype,None,None);
@@ -245,13 +448,34 @@ impl Sandbox {
 
     pub fn step(&mut self,days:f32) {
         self.year+=days as f64/365.0;
-        let snapshot_residents=self.residents.clone();
+        self.activate_terrain_chunks();
+        if let (Some(t),Some(h))=(self.terrain.clone(),self.hazards.as_mut()) { h.step(&t,days,self.seed); }
+        let peers:Vec<Peer>=self.residents.iter().map(|o|Peer{id:o.id,position:o.position,health:o.health,
+            stage:o.life.stage(self.year),hunger:o.mind.needs.hunger,safety:o.mind.needs.safety}).collect();
+        let peer_index:HashMap<u64,usize>=peers.iter().enumerate().map(|(i,o)|(o.id,i)).collect();
+        let peer_grid=PointGrid::new(28.0,peers.iter().map(|o|o.position));
         let snapshot_projects=self.projects.clone();
         let snapshot_structures=self.structures.clone();
         let snapshot_monsters=self.monsters.clone();
         let snapshot_animals=self.animals.clone();
         let active_events:Vec<_>=self.events.iter().copied().filter(|e|e.active(self.year)).collect();
         let features=self.features.clone();
+        let terrain=self.terrain.clone();
+        let walk=Walk::on_foot(&features,terrain.as_deref(),self.hazards.as_ref());
+        // Without a tile world, fire and flood events act physically; with one, the tile fields do.
+        let physical_events=terrain.is_none();
+        let pace=self.move_scale;
+        let feature_index:HashMap<u64,usize>=features.iter().enumerate().map(|(i,f)|(f.id,i)).collect();
+        let feature_grid=PointGrid::new(85.0,features.iter().map(|f|f.position));
+        let household_index:HashMap<u64,usize>=self.households.iter().enumerate().map(|(i,h)|(h.id,i)).collect();
+        let mut first_project_of:HashMap<u64,usize>=HashMap::new();
+        for (i,p) in self.projects.iter().enumerate(){first_project_of.entry(p.household_id).or_insert(i);}
+        let mut near:Vec<u32>=Vec::new();
+        let member_settlement=settlement_of(&self.settlements);
+        let project_index:HashMap<u64,usize>=snapshot_projects.iter().enumerate().map(|(i,p)|(p.id,i)).collect();
+        let structure_index:HashMap<u64,usize>=snapshot_structures.iter().enumerate().map(|(i,s)|(s.id,i)).collect();
+        let project_grid=PointGrid::new(85.0,snapshot_projects.iter().map(|p|p.position));
+        let structure_grid=PointGrid::new(85.0,snapshot_structures.iter().map(|s|s.position));
         let timber_truth=self.timber_truth();
         let mut social_effects:Vec<(u64,u64,ActionPrimitive)>=Vec::new();
         let mut construction_work:Vec<(u64,u64,ActionPrimitive,f32)>=Vec::new();
@@ -265,14 +489,14 @@ impl Sandbox {
             r.mind.needs.hunger=(r.mind.needs.hunger+days*0.006).clamp(0.0,1.0);
             r.mind.needs.rest=(r.mind.needs.rest+days*0.002).clamp(0.0,1.0);
             r.mind.needs.resources=if let Some(hid)=r.life.kinship.household {
-                let stock=self.households.iter().find(|h|h.id==hid).map(|h|h.shared_material).unwrap_or(0.0);
-                let target=self.projects.iter().find(|p|p.household_id==hid)
+                let stock=household_index.get(&hid).map(|&i|self.households[i].shared_material).unwrap_or(0.0);
+                let target=first_project_of.get(&hid).map(|&i|&self.projects[i])
                     .map(|p|(p.material_required-p.material_committed).max(12.0)).unwrap_or(24.0);
                 (1.0-stock/target.max(1.0)).clamp(0.0,1.0)
             } else {0.12};
             let mut perceived=Vec::new();
             let shelter_protection=if r.current_action==ActionPrimitive::Hide {
-                snapshot_structures.iter().filter(|s|s.integrity>0.2&&dist(r.position,s.position)<10.0)
+                {structure_grid.candidates(r.position,10.0,&mut near); near.iter().map(|&i|&snapshot_structures[i as usize])}.filter(|s|s.integrity>0.2&&dist(r.position,s.position)<10.0)
                     .map(|s|s.integrity*0.65).fold(0.0_f32,f32::max)
             } else {0.0};
             for e in &active_events {
@@ -283,8 +507,8 @@ impl Sandbox {
                         r.awareness.observe(SituationReport{kind,source_id:Some(e.id),perceived_severity:influence,confidence,observed_year:self.year,location:[e.position.x,e.position.y]});
                     }
                     match e.kind {
-                        WorldEventKind::Fire=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.25*days).clamp(0.0,1.0);r.health=(r.health-influence*0.006*days).max(0.0);}
-                        WorldEventKind::Flood=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.18*days).clamp(0.0,1.0);}
+                        WorldEventKind::Fire if physical_events=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.25*days).clamp(0.0,1.0);r.health=(r.health-influence*0.006*days).max(0.0);}
+                        WorldEventKind::Flood if physical_events=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.18*days).clamp(0.0,1.0);}
                         WorldEventKind::Earthquake=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.22*days).clamp(0.0,1.0);}
                         WorldEventKind::Storm=>{r.mind.needs.safety=(r.mind.needs.safety+influence*0.12*days).clamp(0.0,1.0);}
                         WorldEventKind::Drought=>{r.mind.needs.hunger=(r.mind.needs.hunger+influence*0.025*days).clamp(0.0,1.0);}
@@ -292,7 +516,27 @@ impl Sandbox {
                     }
                 }
             }
-            for f in &features {
+            feature_grid.candidates(r.position,85.0,&mut near);
+            if let (Some(t),Some(hz))=(terrain.as_deref(),self.hazards.as_ref()) {
+                // Heat and smoke are felt before flames arrive; standing in them burns.
+                if let Some((felt,d,tile))=hz.felt_fire(t,r.position,32.0) {
+                    // Flames are a perceivable heat source: flee from it, or get close and learn from it.
+                    perceived.push(PerceivedFeature{id:FIRE_TARGET_BASE+tile as u64,kind:FeatureKind::HeatSource,distance_m:d,
+                        danger:(felt*1.2).min(1.0),food_hint:0.0,material_hint:0.0,uncertainty:0.1});
+                    r.awareness.observe(SituationReport{kind:SituationKind::Fire,source_id:None,perceived_severity:felt,
+                        confidence:(1.0-d/48.0).clamp(0.2,1.0),observed_year:self.year,location:[r.position.x,r.position.y]});
+                    r.mind.needs.safety=(r.mind.needs.safety+felt*0.35*days).clamp(0.0,1.0);
+                    if d<=TILE_SIZE*1.5 {r.health=(r.health-felt*0.06*days).max(0.0);}
+                }
+                let flood=hz.water_at(t,r.position);
+                if flood>0.15 {
+                    let sev=(flood/1.5).min(1.0);
+                    r.awareness.observe(SituationReport{kind:SituationKind::Flood,source_id:None,perceived_severity:sev,
+                        confidence:0.9,observed_year:self.year,location:[r.position.x,r.position.y]});
+                    r.mind.needs.safety=(r.mind.needs.safety+sev*0.25*days).clamp(0.0,1.0);
+                }
+            }
+            for f in near.iter().map(|&i|&features[i as usize]) {
                 let d=dist(r.position,f.position);
                 if d<=85.0 {
                     let availability=(f.quantity/f.capacity.max(0.001)).clamp(0.0,1.0);
@@ -304,14 +548,16 @@ impl Sandbox {
                 let d=dist(r.position,a.position);
                 if a.health>0.0 && d<=75.0 { perceived.push(PerceivedFeature{id:a.id,kind:FeatureKind::Creature,distance_m:d,danger:0.08+a.archetype.fear*0.08,food_hint:0.35,material_hint:0.18,uncertainty:(d/100.0).clamp(0.05,0.7)}); }
             }
-            for p in &snapshot_projects {
+            project_grid.candidates(r.position,85.0,&mut near);
+            for p in near.iter().map(|&i|&snapshot_projects[i as usize]) {
                 let d=dist(r.position,p.position);
                 if d<=85.0 {
                     perceived.push(PerceivedFeature{id:p.id,kind:FeatureKind::ConstructionSite,distance_m:d,danger:0.03,
                         food_hint:0.0,material_hint:p.material_committed/p.material_required.max(0.1),uncertainty:0.12});
                 }
             }
-            for s in &snapshot_structures {
+            structure_grid.candidates(r.position,85.0,&mut near);
+            for s in near.iter().map(|&i|&snapshot_structures[i as usize]) {
                 let d=dist(r.position,s.position);
                 if d<=85.0 {
                     let kind=if s.integrity>0.2{FeatureKind::ConstructedObject}else{FeatureKind::LooseMaterial};
@@ -340,8 +586,9 @@ impl Sandbox {
                 carrying:0.2*capability,
                 heat_tolerance:0.0,
             });
-            let social_targets:Vec<_>=snapshot_residents.iter().filter(|o|o.id!=r.id&&o.health>0.0&&dist(r.position,o.position)<=28.0).map(|o|SocialTarget{
-                id:o.id,distance_m:dist(r.position,o.position),stage:o.life.stage(self.year),health:o.health,hunger:o.mind.needs.hunger,safety_need:o.mind.needs.safety,
+            peer_grid.candidates(r.position,28.0,&mut near);
+            let social_targets:Vec<_>=near.iter().map(|&i|&peers[i as usize]).filter(|o|o.id!=r.id&&o.health>0.0&&dist(r.position,o.position)<=28.0).map(|o|SocialTarget{
+                id:o.id,distance_m:dist(r.position,o.position),stage:o.stage,health:o.health,hunger:o.hunger,safety_need:o.safety,
                 relation:r.life.social.relations.get(&o.id).copied().unwrap_or_default(),
             }).collect();
             affordances.extend(generate_social(&social_targets));
@@ -351,7 +598,7 @@ impl Sandbox {
                         if let Some(mp)=snapshot_monsters.iter().find(|m|m.id==tid).map(|m|m.position) {
                             // Muster: an armed crowd facing one predator may stand together.
                             // Lone victims still flee; collective defense needs numbers.
-                            let muster=snapshot_residents.iter()
+                            let muster=peers.iter()
                                 .filter(|o|o.id!=r.id&&o.health>0.0&&dist(o.position,mp)<40.0).count();
                             a.expected.safety+=0.10*(muster.min(5) as f32);
                             // Armed defenders stand: repertoire weapons raise resolve, lower felt risk.
@@ -371,7 +618,7 @@ impl Sandbox {
                             }
                         }
                     }
-                    if let Some(p)=snapshot_projects.iter().find(|p|p.id==tid) {
+                    if let Some(p)=project_index.get(&tid).map(|&i|&snapshot_projects[i]) {
                         if r.life.kinship.household==Some(p.household_id) {
                             // Own-household construction satisfies belonging and material need.
                             a.expected.belonging+=0.14;
@@ -380,7 +627,7 @@ impl Sandbox {
                             a.expected.material+=0.55;
                         }
                     }
-                    if let Some(s)=snapshot_structures.iter().find(|s|s.id==tid&&s.integrity>0.2) {
+                    if let Some(s)=structure_index.get(&tid).map(|&i|&snapshot_structures[i]).filter(|s|s.integrity>0.2) {
                         let cap=s.capabilities();
                         match a.action {
                             ActionPrimitive::Hide=>{a.expected.safety+=cap.shelter*0.45+cap.defense*0.20;a.expected.rest+=cap.shelter*0.15;}
@@ -392,7 +639,7 @@ impl Sandbox {
                     }
                 }
             }
-            if let Some(village)=self.settlements.iter().filter(|s|!s.members.is_empty()).find(|s|s.members.contains(&r.id)) {
+            if let Some(village)=member_settlement.get(&r.id).map(|&i|&self.settlements[i]) {
                 for a in &mut affordances { a.local_norm=village.culture.norm(a.action)*0.35; }
             }
             filter_affordances(stage,&mut affordances);
@@ -411,38 +658,41 @@ impl Sandbox {
                 self.causal_log.push(self.year,CausalNode::Decision{resident_id:r.id,action:chosen.action,score:scored[0].1});
             }
             let target=chosen.target.and_then(|id|{
-                features.iter().find(|f|f.id==id).map(|f|f.position)
+                feature_index.get(&id).map(|&i|features[i].position)
                     .or_else(||snapshot_monsters.iter().find(|m|m.id==id).map(|m|m.position))
-                    .or_else(||snapshot_residents.iter().find(|o|o.id==id).map(|o|o.position))
-                    .or_else(||snapshot_projects.iter().find(|p|p.id==id).map(|p|p.position))
-                    .or_else(||snapshot_structures.iter().find(|s|s.id==id).map(|s|s.position))
+                    .or_else(||peer_index.get(&id).map(|&i|peers[i].position))
+                    .or_else(||project_index.get(&id).map(|&i|snapshot_projects[i].position))
+                    .or_else(||structure_index.get(&id).map(|&i|snapshot_structures[i].position))
+                    .or_else(||terrain.as_deref().filter(|_|id>=FIRE_TARGET_BASE).map(|t|{
+                        let i=(id-FIRE_TARGET_BASE) as usize; t.tile_center(i%t.width,i/t.width)
+                    }))
             });
             let mobility=mobility_factor(r.life.stage(self.year));
             if let Some(t)=target {
                 // Purposeful trips to one's own construction site travel faster than wandering.
-                let own_site=chosen.target.and_then(|id|snapshot_projects.iter().find(|p|p.id==id))
+                let own_site=chosen.target.and_then(|id|project_index.get(&id).map(|&i|&snapshot_projects[i]))
                     .map(|p|Some(p.household_id)==r.life.kinship.household).unwrap_or(false);
                 let stride=if own_site&&chosen.action==ActionPrimitive::Move{1.6}else{1.0};
                 match chosen.action {
-                    ActionPrimitive::Avoid=>move_away(&mut r.position,t,days*1.4*mobility,&features),
-                    ActionPrimitive::Hide=>move_toward(&mut r.position,t,days*1.15*mobility,&features),
-                    ActionPrimitive::Attack=>move_toward(&mut r.position,t,days*1.8*mobility,&features),
-                    ActionPrimitive::Move|ActionPrimitive::Assist=>move_toward(&mut r.position,t,days*0.95*stride*mobility,&features),
+                    ActionPrimitive::Avoid=>move_away(&mut r.position,t,days*1.4*mobility*pace,walk),
+                    ActionPrimitive::Hide=>move_toward(&mut r.position,t,days*1.15*mobility*pace,walk),
+                    ActionPrimitive::Attack=>move_toward(&mut r.position,t,days*1.8*mobility*pace,walk),
+                    ActionPrimitive::Move|ActionPrimitive::Assist=>move_toward(&mut r.position,t,days*0.95*stride*mobility*pace,walk),
                     ActionPrimitive::Communicate=>{
-                        if chosen.target.map(|id|snapshot_residents.iter().any(|o|o.id==id)).unwrap_or(false) {
-                            move_toward(&mut r.position,t,days*0.75*mobility,&features);
+                        if chosen.target.map(|id|peer_index.contains_key(&id)).unwrap_or(false) {
+                            move_toward(&mut r.position,t,days*0.75*mobility*pace,walk);
                         }
                     }
                     ActionPrimitive::Gather|ActionPrimitive::Carry|ActionPrimitive::Observe|ActionPrimitive::Experiment|
-                    ActionPrimitive::Dig|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Bind|ActionPrimitive::Raise=>move_toward(&mut r.position,t,days*0.7*mobility,&features),
+                    ActionPrimitive::Dig|ActionPrimitive::Strike|ActionPrimitive::Cut|ActionPrimitive::Bind|ActionPrimitive::Raise=>move_toward(&mut r.position,t,days*0.7*mobility*pace,walk),
                     _=>{}
                 }
             }
             if let Some(pid)=chosen.target {
-                if snapshot_projects.iter().any(|p|p.id==pid) && matches!(chosen.action,ActionPrimitive::Bind|ActionPrimitive::Raise|ActionPrimitive::Dig|ActionPrimitive::Carry|ActionPrimitive::Experiment) {
+                if project_index.contains_key(&pid) && matches!(chosen.action,ActionPrimitive::Bind|ActionPrimitive::Raise|ActionPrimitive::Dig|ActionPrimitive::Carry|ActionPrimitive::Experiment) {
                     construction_work.push((pid,r.id,chosen.action,r.practice.skill(chosen.action)));
                 }
-                if snapshot_structures.iter().any(|s|s.id==pid) {
+                if structure_index.contains_key(&pid) {
                     if chosen.action==ActionPrimitive::Hide {
                         r.mind.needs.safety=(r.mind.needs.safety-0.04*days).max(0.0);
                         r.mind.needs.rest=(r.mind.needs.rest-0.025*days).max(0.0);
@@ -453,7 +703,7 @@ impl Sandbox {
                 }
             }
             if matches!(chosen.action,ActionPrimitive::Assist|ActionPrimitive::Communicate) {
-                if let Some(tid)=chosen.target {if snapshot_residents.iter().any(|o|o.id==tid){social_effects.push((r.id,tid,chosen.action));}}
+                if let Some(tid)=chosen.target {if peer_index.contains_key(&tid){social_effects.push((r.id,tid,chosen.action));}}
             }
             let value=if chosen.action==ActionPrimitive::Avoid {chosen.expected.safety} else {
                 chosen.expected.food+chosen.expected.knowledge+chosen.expected.status+
@@ -468,7 +718,7 @@ impl Sandbox {
                 // Satisfied curiosity lowers the drive so observation cannot dominate forever.
                 r.mind.needs.curiosity=(r.mind.needs.curiosity-chosen.expected.knowledge*0.35*days.min(1.0)).clamp(0.05,1.0);
                 if let Some(tid)=chosen.target {
-                    if let Some(s)=snapshot_structures.iter().find(|s|s.id==tid) {
+                    if let Some(s)=structure_index.get(&tid).map(|&i|&snapshot_structures[i]) {
                         let confidence=if chosen.action==ActionPrimitive::Experiment{0.42}else{0.20};
                         r.knowledge.learn(format!("design::{}",s.id),s.integrity,confidence);
                     }
@@ -485,10 +735,14 @@ impl Sandbox {
             r.memory.remember(Episode{year:self.year,action:chosen.action,target:chosen.target,value,surprise:chosen.uncertainty,
                 danger:chosen.expected.physical_risk,social_visibility:0.2});
         }
+        let resident_index:HashMap<u64,usize>=self.residents.iter().enumerate().map(|(i,r)|(r.id,i)).collect();
+        // Structures are neither added nor moved until construction completes later in the step.
+        let live_structure_grid=PointGrid::new(35.0,self.structures.iter().map(|s|s.position));
+        let mut nearby:Vec<u32>=Vec::new();
         for (feature_id,hid,gatherer_id,requested) in harvests {
-            let Some(fi)=self.features.iter().position(|f|f.id==feature_id) else{continue;};
+            let Some(&fi)=feature_index.get(&feature_id) else{continue;};
             // Sustainable harvest leaves a regrowth base; desperate gatherers strip it bare.
-            let desperate=self.residents.iter().find(|r|r.id==gatherer_id).map(|r|r.mind.needs.hunger>0.9).unwrap_or(false);
+            let desperate=resident_index.get(&gatherer_id).map(|&i|self.residents[i].mind.needs.hunger>0.9).unwrap_or(false);
             let share=if desperate{1.0}else{0.6};
             let taken=requested.min(self.features[fi].quantity.max(0.0)*share);
             if taken<=0.0{continue;}
@@ -498,7 +752,8 @@ impl Sandbox {
             if let Some(hid)=hid {
                 if let Some(h)=self.households.iter_mut().find(|h|h.id==hid) {
                     let home=h.home;
-                    let storage:f32=self.structures.iter().filter(|s|s.household_id==hid&&s.integrity>0.2&&dist(s.position,home)<35.0)
+                    live_structure_grid.candidates(home,35.0,&mut nearby);
+                    let storage:f32=nearby.iter().map(|&i|&self.structures[i as usize]).filter(|s|s.household_id==hid&&s.integrity>0.2&&dist(s.position,home)<35.0)
                         .map(|s|s.capabilities().storage).sum();
                     let food_cap=80.0+storage*260.0;
                     let material_cap=35.0+storage*180.0;
@@ -523,10 +778,11 @@ impl Sandbox {
                     h.shared_material-=amount;self.projects[pi].material_committed+=amount;
                 }
             }
-            let workspace=self.structures.iter().filter(|s|s.integrity>0.2&&dist(s.position,self.projects[pi].position)<28.0)
+            live_structure_grid.candidates(self.projects[pi].position,28.0,&mut nearby);
+            let workspace=nearby.iter().map(|&i|&self.structures[i as usize]).filter(|s|s.integrity>0.2&&dist(s.position,self.projects[pi].position)<28.0)
                 .map(|s|s.capabilities().workspace).fold(0.0_f32,f32::max);
             // Coordinated crews with an institution behind them work faster.
-            let crew_bonus=self.settlements.iter().find(|s|s.members.contains(&resident_id))
+            let crew_bonus=member_settlement.get(&resident_id).map(|&i|&self.settlements[i])
                 .map(|s|coordination_bonus(&self.institutions,s.id,action)).unwrap_or(0.0);
             let work=work_value(action,skill,days.min(2.0))*(1.0+workspace*0.35)*(1.0+crew_bonus);
             // Builders haul their own materials as they work; dedicated Carry trips move more.
@@ -566,8 +822,8 @@ impl Sandbox {
         }
 
         for (actor_id,target_id,action) in social_effects {
-            let Some(ai)=self.residents.iter().position(|r|r.id==actor_id) else{continue;};
-            let Some(ti)=self.residents.iter().position(|r|r.id==target_id) else{continue;};
+            let Some(&ai)=resident_index.get(&actor_id) else{continue;};
+            let Some(&ti)=resident_index.get(&target_id) else{continue;};
             if ai==ti{continue;}
             let (actor,target)=if ai<ti {
                 let (l,r)=self.residents.split_at_mut(ti);(&mut l[ai],&mut r[0])
@@ -593,7 +849,7 @@ impl Sandbox {
                     actor.mind.needs.belonging=(actor.mind.needs.belonging-0.12*days.min(1.0)).max(0.05);
                     target.mind.needs.belonging=(target.mind.needs.belonging-0.12*days.min(1.0)).max(0.05);
                     // Gathering under a shared story eases fear a little.
-                    if let Some(sid)=self.settlements.iter().find(|s|s.members.contains(&actor.id)).map(|s|s.id) {
+                    if let Some(sid)=member_settlement.get(&actor.id).map(|&i|self.settlements[i].id) {
                         let relief=ritual_relief(&self.narratives,sid);
                         if relief>0.0 {
                             actor.mind.needs.safety=(actor.mind.needs.safety-relief*days).max(0.0);
@@ -657,12 +913,17 @@ impl Sandbox {
                 let x=e.influence_at(s.position);
                 if x<=0.0{continue;}
                 damage+=match e.kind {
-                    WorldEventKind::Fire=>x*0.010*days,
-                    WorldEventKind::Flood=>x*0.004*days,
+                    WorldEventKind::Fire if physical_events=>x*0.010*days,
+                    WorldEventKind::Flood if physical_events=>x*0.004*days,
                     WorldEventKind::Earthquake=>x*0.020*days,
                     WorldEventKind::Storm=>x*0.006*days,
                     _=>0.0,
                 };
+            }
+            if let (Some(t),Some(hz))=(terrain.as_deref(),self.hazards.as_ref()) {
+                // Buildings catch from adjacent flames and soak in standing water.
+                let fire=hz.felt_fire(t,s.position,TILE_SIZE*1.5).map(|x|x.0).unwrap_or(0.0);
+                damage+=fire*0.12*days+hz.water_at(t,s.position)*0.02*days;
             }
             s.integrity=(s.integrity-damage).max(0.0);
         }
@@ -670,9 +931,14 @@ impl Sandbox {
             if f.regeneration_per_day>0.0 {
                 let drought:f32=active_events.iter().filter(|e|e.kind==WorldEventKind::Drought).map(|e|e.influence_at(f.position)).sum();
                 let rain:f32=active_events.iter().filter(|e|e.kind==WorldEventKind::Rain).map(|e|e.influence_at(f.position)).sum();
-                let fire:f32=active_events.iter().filter(|e|e.kind==WorldEventKind::Fire).map(|e|e.influence_at(f.position)).sum();
+                let fire:f32=if physical_events {active_events.iter().filter(|e|e.kind==WorldEventKind::Fire).map(|e|e.influence_at(f.position)).sum()} else {0.0};
                 let moisture=(1.0-drought.clamp(0.0,0.95))*(1.0+rain.clamp(0.0,1.5)*0.65);
-                let growth=f.regeneration_per_day*days*moisture;
+                let mut growth=f.regeneration_per_day*days*moisture;
+                if let (Some(t),Some(hz))=(terrain.as_deref(),self.hazards.as_ref()) {
+                    // Flames consume standing growth; burnt ground regrows slowly.
+                    let burning=hz.fire_at(t,f.position);
+                    growth=growth*(1.0-hz.scorch_at(t,f.position))-burning*f.capacity*0.9*days;
+                }
                 f.quantity=(f.quantity+growth-fire*0.18*days).clamp(0.0,f.capacity);
             }
         }
@@ -680,8 +946,8 @@ impl Sandbox {
         for a in &mut self.animals {
             if a.health<=0.0 {continue;} a.hunger=(a.hunger+days*0.002).clamp(0.0,1.0);
             let nearest_monster=self.monsters.iter().filter(|m|m.health>0.0).map(|m|(m.position,dist(a.position,m.position))).min_by(|x,y|x.1.total_cmp(&y.1));
-            if let Some((p,d))=nearest_monster {if d<70.0 {move_away(&mut a.position,p,days*(0.35+a.archetype.speed+a.archetype.fear*0.45),&features);continue;}}
-            a.position.x+=signed(self.seed,self.year.to_bits()+a.id)*days*0.25;a.position.y+=signed(self.seed,self.year.to_bits()+a.id+3)*days*0.25;
+            if let Some((p,d))=nearest_monster {if d<70.0 {move_away(&mut a.position,p,days*(0.35+a.archetype.speed+a.archetype.fear*0.45)*pace,walk);continue;}}
+            wander(&mut a.position,signed(self.seed,self.year.to_bits()+a.id)*days*0.25*pace,signed(self.seed,self.year.to_bits()+a.id+3)*days*0.25*pace,terrain.as_deref());
         }
         for m in &mut self.monsters {
             m.motion_phase=(m.motion_phase+days*(0.18+m.archetype.speed*0.22)).fract();
@@ -707,10 +973,9 @@ impl Sandbox {
                     m.motion=if m.archetype.speed>0.9{MotionState::Run}else{MotionState::Walk};
                     // Committed lunge: close hungry predators sprint faster than fleeing prey.
                     let sprint=if d<25.0&&m.hunger>0.5{2.2}else{1.0};
-                    move_toward(&mut m.position,target,days*(0.60+m.archetype.speed*1.8+m.archetype.aggression*0.5)*sprint,&features);
+                    move_toward(&mut m.position,target,days*(0.60+m.archetype.speed*1.8+m.archetype.aggression*0.5)*sprint*pace,walk);
                 } else {
-                    m.position.x+=signed(self.seed,self.year.to_bits()+m.id)*days*0.4;
-                    m.position.y+=signed(self.seed,self.year.to_bits()+m.id+1)*days*0.4;
+                    wander(&mut m.position,signed(self.seed,self.year.to_bits()+m.id)*days*0.4*pace,signed(self.seed,self.year.to_bits()+m.id+1)*days*0.4*pace,terrain.as_deref());
                 }
             }
         }
@@ -723,6 +988,7 @@ impl Sandbox {
         self.step_experimentation(days);
         self.step_warfare(days);
         self.step_civilizations_cohorts();
+        crate::growth::runtime::step(self);
         self.step_history();
         // Hunting: killing an animal yields meat for the hunter's household, or the hunter.
         let mut hunt_kills:Vec<(u64,Option<u64>,u64,f32)>=Vec::new();
@@ -764,8 +1030,11 @@ impl Sandbox {
 
         // Proximity creates familiarity; stable high-affinity relationships can become partnerships.
         let mut new_partnerships:Vec<(usize,usize)>=Vec::new();
+        let grid=PointGrid::new(18.0,self.residents.iter().map(|r|r.position));
+        let mut near:Vec<u32>=Vec::new();
         for i in 0..initial_len {
-            for j in (i+1)..initial_len {
+            grid.candidates(self.residents[i].position,18.0,&mut near);
+            for j in near.iter().map(|&j|j as usize).filter(|&j|j>i) {
                 let (left,right)=self.residents.split_at_mut(j);
                 let a=&mut left[i]; let b=&mut right[0];
                 if a.health<=0.0||b.health<=0.0||dist(a.position,b.position)>18.0 {continue;}
@@ -808,12 +1077,15 @@ impl Sandbox {
         }
 
         // Children preferentially learn from parents/guardians when nearby.
-        let parent_teaching:Vec<_>=self.residents.iter().filter(|r|r.health>0.0)
-            .map(|r|(r.id,r.position,r.knowledge.clone(),r.life.social.relations.clone())).collect();
+        // Snapshot only the living parents of learners: teaching reads pre-step knowledge.
+        let learner=|r:&Resident|r.health>0.0&&matches!(r.life.stage(year),LifeStage::Child|LifeStage::Adolescent);
+        let wanted:std::collections::HashSet<u64>=self.residents.iter().filter(|r|learner(r)).flat_map(|r|r.life.kinship.parents.iter().copied()).collect();
+        let parent_teaching:HashMap<u64,(Position,KnowledgeStore)>=self.residents.iter()
+            .filter(|r|r.health>0.0&&wanted.contains(&r.id)).map(|r|(r.id,(r.position,r.knowledge.clone()))).collect();
         for child in &mut self.residents {
-            if child.health<=0.0 || !matches!(child.life.stage(year),LifeStage::Child|LifeStage::Adolescent){continue;}
+            if !learner(child){continue;}
             for parent_id in child.life.kinship.parents.clone() {
-                if let Some((_,pos,knowledge,_))=parent_teaching.iter().find(|(id,_,_,_)|*id==parent_id) {
+                if let Some((pos,knowledge))=parent_teaching.get(&parent_id) {
                     if dist(child.position,*pos)<=18.0 {
                         let distortion=signed(self.seed,child.id.wrapping_mul(77_777)^parent_id)*0.05;
                         knowledge.transmit_to(&mut child.knowledge,0.92,distortion);
@@ -839,7 +1111,10 @@ impl Sandbox {
             }
             let Some((j,_))=best else{continue;};
             let rel=mother.life.social.relations.get(&self.residents[j].id).copied().unwrap_or_default();
-            let hh_pressure=mother.life.kinship.household.and_then(|h|self.households.iter().find(|x|x.id==h)).map(|h|h.pressure()).unwrap_or(0.35);
+            // Empty stores only weigh on fertility when the family is actually going hungry;
+            // foragers who eat well day to day do not need a full larder to have children.
+            let store_pressure=mother.life.kinship.household.and_then(|h|self.households.iter().find(|x|x.id==h)).map(|h|h.pressure()).unwrap_or(0.35);
+            let hh_pressure=store_pressure*(mother.mind.needs.hunger/0.4).clamp(0.0,1.0);
             let prop=conception_propensity(ReproductionContext{stage:mother.life.stage(year),sex:mother.life.sex,health:mother.health,
                 hunger:mother.mind.needs.hunger,safety_need:mother.mind.needs.safety,care_trait:mother.mind.traits.empathy,
                 household_pressure:hh_pressure,partner_relation:rel});
@@ -904,9 +1179,10 @@ impl Sandbox {
         }
 
         let mut proposed_goals:Vec<(u64,Position)>=Vec::new();
+        let by_household=alive_by_household(&self.residents);
         for h in &self.households {
             if h.migration_goal.is_some(){continue;}
-            let members:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(h.id)).collect();
+            let members:Vec<&Resident>=by_household.get(&h.id).map(|v|v.iter().map(|&i|&self.residents[i]).collect()).unwrap_or_default();
             if members.is_empty(){continue;}
             let pressure=h.pressure();
             let disposition=members.iter().map(|r|r.mind.traits.risk_tolerance*0.35+r.mind.traits.novelty_seeking*0.40+r.mind.traits.planning_horizon*0.25).sum::<f32>()/members.len() as f32;
@@ -937,13 +1213,13 @@ impl Sandbox {
             // Overseas colonization: water crossings need real craft, never assumed.
             let craft=self.household_craft(hid);
             for r in self.residents.iter_mut().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)) {
-                let rate=days*(0.20+r.mind.traits.persistence*0.22);
+                let rate=days*(0.20+r.mind.traits.persistence*0.22)*self.move_scale;
                 let sails=crosses_water((r.position.x,r.position.y),(goal.x,goal.y),&waters)
                     .map(|sev|can_embark(craft,sev)).unwrap_or(false);
                 if sails {
-                    move_toward(&mut r.position,goal,rate,&[]);
+                    move_toward(&mut r.position,goal,rate,Walk::by_craft(self.terrain.as_deref()));
                 } else {
-                    move_toward(&mut r.position,goal,rate,&self.features);
+                    move_toward(&mut r.position,goal,rate,Walk::on_foot(&self.features,self.terrain.as_deref(),self.hazards.as_ref()));
                 }
             }
             let arrived=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)).all(|r|dist(r.position,goal)<12.0);
@@ -1015,11 +1291,12 @@ impl Sandbox {
         // Proposals arise from local need, practiced construction actions and stored material.
         let mut proposals:Vec<(u64,Position,f32)>=Vec::new();
         let mut drive_updates:Vec<(u64,Position,f32,f32)>=Vec::new();
+        let by_household=alive_by_household(&self.residents);
         for h in &self.households {
             if h.members.is_empty(){continue;}
             if self.projects.iter().any(|p|p.household_id==h.id){continue;}
             if self.structures.iter().any(|s|s.household_id==h.id&&s.integrity>0.2&&dist(s.position,h.home)<24.0){continue;}
-            let members:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(h.id)).collect();
+            let members:Vec<&Resident>=by_household.get(&h.id).map(|v|v.iter().map(|&i|&self.residents[i]).collect()).unwrap_or_default();
             if members.is_empty(){continue;}
             let safety=members.iter().map(|r|r.mind.needs.safety).sum::<f32>()/members.len() as f32;
             let rest=members.iter().map(|r|r.mind.needs.rest).sum::<f32>()/members.len() as f32;
@@ -1043,7 +1320,7 @@ impl Sandbox {
         for (hid,pos,skill) in proposals {
             let id=self.next_id;self.next_id+=1;
             let available=self.households.iter().find(|h|h.id==hid).map(|h|h.shared_material).unwrap_or(0.0);
-            let members:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(hid)).collect();
+            let members:Vec<&Resident>=by_household.get(&hid).map(|v|v.iter().map(|&i|&self.residents[i]).collect()).unwrap_or_default();
             let mut parent_score:Option<(&BuiltStructure,f32)>=None;
             for s in &self.structures {
                 let key=format!("design::{}",s.id);
@@ -1079,7 +1356,7 @@ impl Sandbox {
         }
         for i in completed.into_iter().rev() {
             let p=self.projects.remove(i);
-            let local:Vec<&Resident>=self.residents.iter().filter(|r|r.health>0.0&&r.life.kinship.household==Some(p.household_id)).collect();
+            let local:Vec<&Resident>=by_household.get(&p.household_id).map(|v|v.iter().map(|&i|&self.residents[i]).collect()).unwrap_or_default();
             let skill=if local.is_empty(){0.0}else{local.iter().map(|r|r.practice.skill(ActionPrimitive::Raise).max(r.practice.skill(ActionPrimitive::Bind))).sum::<f32>()/local.len() as f32};
             let integrity=integrity_from(&p.design,skill,p.material_committed/p.material_required.max(0.1));
             self.structures.push(BuiltStructure{id:p.id,household_id:p.household_id,position:p.position,design:p.design,integrity,completed_year:self.year,material_invested:p.material_committed});
@@ -1245,9 +1522,10 @@ impl Sandbox {
             .map(|e|(e.kind,e.position,e.radius)).collect();
         if disasters.is_empty(){return;}
         let mut seen:Vec<(u64,WorldEventKind)>=Vec::new();
+        let member_settlement=settlement_of(&self.settlements);
         let members:Vec<(u64,Position,u64,Awareness)>=self.residents.iter().filter(|r|r.health>0.0)
             .filter_map(|r|{
-                let sid=self.settlements.iter().find(|s|s.members.contains(&r.id)).map(|s|s.id)?;
+                let sid=member_settlement.get(&r.id).map(|&i|self.settlements[i].id)?;
                 Some((r.id,r.position,sid,r.awareness.clone()))
             }).collect();
         for (kind,pos,radius) in disasters {
