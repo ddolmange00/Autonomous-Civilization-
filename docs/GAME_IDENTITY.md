@@ -5,13 +5,15 @@ WorldBox-like intervention freedom
 + legible pixel world
 + decentralized resident agency
 + physical/material ground truth
-+ emergent knowledge/design lineages
++ regional growth trees reached through carried, tradable knowledge
 + inspectable causal history.
 
-The game is not primarily a historical reenactment, RTS, colony manager or idle god game.
+The game is a god sandbox first. RTS orders, base defense and colony detail are optional layers on top of an autonomous world, not the core loop. It is not a historical reenactment or an idle game.
 
 Player fantasy:
-"I create pressures and opportunities, guide one people when I want, and watch individuals invent a civilization I could not have predicted."
+"I own a living world, register any tribes I like, raise, rush, punish or abandon each of them as I please, and watch individuals build civilizations I could not have predicted."
+
+Full spec: `PC_WORLDBOX_VISION.md`.
 
 Non-negotiables:
 - world remains active without player orders

@@ -105,9 +105,9 @@ Our extension:
 Benchmark:
 - civilization progression and unlockable capabilities
 
-Our deliberate departure:
-- no fixed tech tree or era ladder
-- problem -> observation -> candidate action/design -> physical test -> memory/social transmission
+Our deliberate departure (revised 2026-09-29, see `PC_WORLDBOX_VISION.md`):
+- authored growth trees per domain, with regional variants and exclusive branches instead of one global tree; era names are derived labels, not gates
+- nodes are reached through problem -> observation -> candidate action/design -> physical test -> memory/social transmission
 - material/process/design lineage
 - copying, theft, trade and convergent discovery
 - knowledge can be lost when carriers die or institutions collapse

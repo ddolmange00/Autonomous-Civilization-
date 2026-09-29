@@ -1,5 +1,7 @@
 # Roadmap
 
+Current PC upgrade plan and phase order: `PC_WORLDBOX_VISION.md`.
+
 ## Foundation
 Material truth/belief model; environment fields/barriers; design genome; physics-lite; monster ecology/combat/extinction; seeded scenario runner.
 
